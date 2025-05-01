@@ -1,7 +1,22 @@
+// @/app/page.tsx
+"use client"; // Add this directive
+
+import * as React from "react"; // Import React
+import { useState } from "react"; // Import useState
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { PlusCircle, Search, Filter } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"; // Import Dialog components
+import { Label } from "@/components/ui/label"; // Import Label if needed for form
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -12,8 +27,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 export default function LeadsPage() {
-  // Removed hardcoded leads array
   const leads: any[] = []; // Initialize as empty array
+  const [isAddLeadOpen, setIsAddLeadOpen] = useState(false); // State for Add Lead dialog
 
   return (
     <div className="flex flex-col gap-4">
@@ -45,10 +60,54 @@ export default function LeadsPage() {
                <DropdownMenuCheckboxItem>Convertido</DropdownMenuCheckboxItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button size="sm" className="h-9 gap-1">
-            <PlusCircle className="h-3.5 w-3.5" />
-            <span className="sr-only sm:not-sr-only">Añadir Lead</span>
-          </Button>
+           {/* Add Lead Dialog */}
+           <Dialog open={isAddLeadOpen} onOpenChange={setIsAddLeadOpen}>
+             <DialogTrigger asChild>
+                <Button size="sm" className="h-9 gap-1">
+                  <PlusCircle className="h-3.5 w-3.5" />
+                  <span className="sr-only sm:not-sr-only">Añadir Lead</span>
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[425px]">
+                <DialogHeader>
+                  <DialogTitle>Añadir Nuevo Lead</DialogTitle>
+                  <DialogDescription>
+                    Introduce la información del nuevo lead aquí. Haz clic en guardar cuando termines.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                  {/* Placeholder Form Fields */}
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="name" className="text-right">
+                      Nombre
+                    </Label>
+                    <Input id="name" placeholder="Nombre completo" className="col-span-3" />
+                  </div>
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="email" className="text-right">
+                      Email
+                    </Label>
+                    <Input id="email" type="email" placeholder="correo@ejemplo.com" className="col-span-3" />
+                  </div>
+                   <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="phone" className="text-right">
+                      Teléfono
+                    </Label>
+                    <Input id="phone" type="tel" placeholder="+34 123 456 789" className="col-span-3" />
+                  </div>
+                   <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="source" className="text-right">
+                      Fuente
+                    </Label>
+                    <Input id="source" placeholder="Ej. Web, Referencia" className="col-span-3" />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button type="submit">Guardar Lead</Button>
+                   <Button variant="outline" onClick={() => setIsAddLeadOpen(false)}>Cancelar</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
         </div>
       </div>
 
@@ -70,7 +129,36 @@ export default function LeadsPage() {
               <p className="text-sm text-muted-foreground">Recibido: {lead.date}</p>
             </CardContent>
             <CardFooter className="flex justify-end gap-2">
-              <Button variant="outline" size="sm">Ver Detalles</Button>
+               {/* Add Dialog for View Details */}
+                <Dialog>
+                    <DialogTrigger asChild>
+                        <Button variant="outline" size="sm">Ver Detalles</Button>
+                    </DialogTrigger>
+                    <DialogContent className="sm:max-w-md">
+                        <DialogHeader>
+                        <DialogTitle>{lead.name}</DialogTitle>
+                        <DialogDescription>
+                            Información detallada del lead.
+                        </DialogDescription>
+                        </DialogHeader>
+                        <div className="py-4">
+                            <p><strong>Email:</strong> {lead.email || 'N/A'}</p>
+                            <p><strong>Teléfono:</strong> {lead.phone || 'N/A'}</p>
+                            <p><strong>Fuente:</strong> {lead.source}</p>
+                            <p><strong>Asignado a:</strong> {lead.salesperson}</p>
+                            <p><strong>Estado:</strong> {lead.status}</p>
+                            <p><strong>Fecha Recibido:</strong> {lead.date}</p>
+                            {/* Add more details as needed */}
+                        </div>
+                        <DialogFooter>
+                         <DialogTrigger asChild>
+                               <Button type="button" variant="secondary">
+                                Cerrar
+                               </Button>
+                         </DialogTrigger>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
             </CardFooter>
           </Card>
         ))}
@@ -83,12 +171,57 @@ export default function LeadsPage() {
               <CardDescription>Empieza añadiendo tu primer lead.</CardDescription>
             </CardHeader>
             <CardContent>
-              <Button>
-                <PlusCircle className="mr-2 h-4 w-4" /> Añadir Lead
-              </Button>
+                <Dialog open={isAddLeadOpen} onOpenChange={setIsAddLeadOpen}>
+                    <DialogTrigger asChild>
+                        <Button>
+                            <PlusCircle className="mr-2 h-4 w-4" /> Añadir Lead
+                        </Button>
+                    </DialogTrigger>
+                     {/* Re-use the same DialogContent structure as above */}
+                     <DialogContent className="sm:max-w-[425px]">
+                        <DialogHeader>
+                        <DialogTitle>Añadir Nuevo Lead</DialogTitle>
+                        <DialogDescription>
+                            Introduce la información del nuevo lead aquí. Haz clic en guardar cuando termines.
+                        </DialogDescription>
+                        </DialogHeader>
+                        <div className="grid gap-4 py-4">
+                        {/* Placeholder Form Fields */}
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="name-empty" className="text-right">
+                            Nombre
+                            </Label>
+                            <Input id="name-empty" placeholder="Nombre completo" className="col-span-3" />
+                        </div>
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="email-empty" className="text-right">
+                            Email
+                            </Label>
+                            <Input id="email-empty" type="email" placeholder="correo@ejemplo.com" className="col-span-3" />
+                        </div>
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="phone-empty" className="text-right">
+                            Teléfono
+                            </Label>
+                            <Input id="phone-empty" type="tel" placeholder="+34 123 456 789" className="col-span-3" />
+                        </div>
+                        <div className="grid grid-cols-4 items-center gap-4">
+                            <Label htmlFor="source-empty" className="text-right">
+                            Fuente
+                            </Label>
+                            <Input id="source-empty" placeholder="Ej. Web, Referencia" className="col-span-3" />
+                        </div>
+                        </div>
+                        <DialogFooter>
+                        <Button type="submit">Guardar Lead</Button>
+                        <Button variant="outline" onClick={() => setIsAddLeadOpen(false)}>Cancelar</Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
             </CardContent>
           </Card>
         )}
     </div>
   );
 }
+    
