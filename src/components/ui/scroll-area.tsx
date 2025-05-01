@@ -48,4 +48,3 @@ ScrollBar.displayName = ScrollAreaPrimitive.ScrollAreaScrollbar.displayName
 const ScrollAreaViewport = ScrollAreaPrimitive.Viewport; // Export Viewport
 
 export { ScrollArea, ScrollBar, ScrollAreaViewport } // Add ScrollAreaViewport to exports
-```

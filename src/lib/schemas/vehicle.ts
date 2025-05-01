@@ -11,7 +11,7 @@ export const vehicleSchema = z.object({
   color: z.string().optional(),
   engine: z.string().optional(),
   transmission: z.enum(["Manual", "Automática"]),
-  features: z.string().optional(),
+  features: z.array(z.string()).optional(), // Changed to array of strings
   condition: z.string().optional(),
   documentation: z.string().optional(),
   entryDate: z.date().default(new Date()), // Automatically set entry date
@@ -20,4 +20,3 @@ export const vehicleSchema = z.object({
 });
 
 export type VehicleInput = z.infer<typeof vehicleSchema>;
-```
