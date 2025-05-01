@@ -15,7 +15,7 @@ import {
   CardContent,
   CardFooter,
 } from "@/components/ui/card";
-import { PlusCircle, Search, Filter, X, Check, ChevronDown, Calendar as CalendarIcon } from "lucide-react";
+import { PlusCircle, Search, Filter, X, Check, ChevronDown, Calendar as CalendarIcon, Car } from "lucide-react"; // Import Car icon
 import Image from "next/image";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -398,7 +398,7 @@ export default function InventoryPage() {
                  <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="outline" className="w-full justify-between">
-                        <span>Seleccionar características</span>
+                        <span>Seleccionar características ({field.value?.length || 0})</span>
                         <ChevronDown className="h-4 w-4 opacity-50" />
                       </Button>
                     </DropdownMenuTrigger>
@@ -625,7 +625,7 @@ export default function InventoryPage() {
         // Empty State Card
         <Card className="col-span-full flex flex-col items-center justify-center py-16 border-dashed border-2 mt-8">
             <CardHeader className="text-center">
-                <CarIcon className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+                <Car className="mx-auto h-12 w-12 text-muted-foreground mb-4" /> {/* Replaced CarIcon with Car */}
                 <CardTitle className="text-xl">No hay vehículos en el inventario</CardTitle>
                 <CardDescription>Empieza añadiendo tu primer vehículo.</CardDescription>
             </CardHeader>
