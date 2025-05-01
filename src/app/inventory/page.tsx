@@ -12,6 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuCheckboxItem,
 } from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils"; // Import cn
 
 export default function InventoryPage() {
   const vehicles = [
