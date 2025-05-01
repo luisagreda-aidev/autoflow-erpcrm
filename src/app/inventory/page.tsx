@@ -12,15 +12,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuCheckboxItem,
 } from "@/components/ui/dropdown-menu";
-import { cn } from "@/lib/utils"; // Import cn
+import { cn } from "@/lib/utils"; // Ensure cn is imported
 
 export default function InventoryPage() {
-  const vehicles = [
-    { id: 1, make: "Toyota", model: "Camry", year: 2021, vin: "123ABC456DEF789", price: 25000, status: "Disponible", mileage: 15000, image: "https://picsum.photos/300/200?random=1" },
-    { id: 2, make: "Honda", model: "Civic", year: 2020, vin: "987XYZ654ABC321", price: 22000, status: "Reservado", mileage: 25000, image: "https://picsum.photos/300/200?random=2" },
-    { id: 3, make: "Ford", model: "F-150", year: 2019, vin: "FGH456JKL123MNP", price: 35000, status: "Vendido", mileage: 45000, image: "https://picsum.photos/300/200?random=3" },
-    { id: 4, make: "BMW", model: "X5", year: 2022, vin: "BMWX5ASERTYUIOP", price: 65000, status: "Disponible", mileage: 5000, image: "https://picsum.photos/300/200?random=4" },
-  ];
+  // Removed hardcoded vehicles array
+  const vehicles: any[] = []; // Initialize as empty array
 
   const getStatusBadgeVariant = (status: string) => {
     switch (status) {
@@ -110,8 +106,8 @@ export default function InventoryPage() {
 
        {/* Placeholder for empty state */}
         {vehicles.length === 0 && (
-          <Card className="col-span-full flex flex-col items-center justify-center py-10">
-            <CardHeader>
+          <Card className="col-span-full flex flex-col items-center justify-center py-10 border-dashed border-2">
+            <CardHeader className="text-center">
               <CardTitle>No hay vehículos en el inventario</CardTitle>
               <CardDescription>Empieza añadiendo tu primer vehículo.</CardDescription>
             </CardHeader>

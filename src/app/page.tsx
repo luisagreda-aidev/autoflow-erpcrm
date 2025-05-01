@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
-import { PlusCircle, FileText, Search, Filter } from "lucide-react";
+import { PlusCircle, Search, Filter } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
@@ -12,12 +12,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 export default function LeadsPage() {
-  const leads = [
-    { id: 1, name: "Juan Pérez", source: "Web", status: "Nuevo", date: "2024-07-28", salesperson: "Ana García" },
-    { id: 2, name: "María López", source: "Teléfono", status: "Contactado", date: "2024-07-27", salesperson: "Carlos Ruiz" },
-    { id: 3, name: "Carlos Gómez", source: "Visita", status: "Seguimiento", date: "2024-07-26", salesperson: "Ana García" },
-    { id: 4, name: "Laura Fernández", source: "Web", status: "Nuevo", date: "2024-07-28", salesperson: "David Martín" },
-  ];
+  // Removed hardcoded leads array
+  const leads: any[] = []; // Initialize as empty array
 
   return (
     <div className="flex flex-col gap-4">
@@ -40,7 +36,7 @@ export default function LeadsPage() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuLabel>Filtrar por</DropdownMenuLabel>
+              <DropdownMenuLabel>Filtrar por Estado</DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuCheckboxItem checked>Nuevo</DropdownMenuCheckboxItem>
               <DropdownMenuCheckboxItem>Contactado</DropdownMenuCheckboxItem>
@@ -81,8 +77,8 @@ export default function LeadsPage() {
       </div>
        {/* Placeholder for empty state */}
         {leads.length === 0 && (
-          <Card className="col-span-full flex flex-col items-center justify-center py-10">
-            <CardHeader>
+          <Card className="col-span-full flex flex-col items-center justify-center py-10 border-dashed border-2">
+            <CardHeader className="text-center">
               <CardTitle>No hay leads todavía</CardTitle>
               <CardDescription>Empieza añadiendo tu primer lead.</CardDescription>
             </CardHeader>

@@ -49,14 +49,15 @@
 
     --radius: 0.5rem;
 
-    --sidebar-background: 222.9 31.1% 97.5%; /* Slightly off-white/very light gray */
-    --sidebar-foreground: 224 71.4% 4.1%; /* Dark Grayish Blue */
-    --sidebar-primary: 217.2 91.2% 59.8%; /* Medium Blue */
+    /* Updated Sidebar Variables - Light Mode */
+    --sidebar-background: 215 60% 97%; /* Very light blue */
+    --sidebar-foreground: 224 71.4% 10%; /* Slightly darker text */
+    --sidebar-primary: 240 60% 65%; /* Softer, slightly purplish blue */
     --sidebar-primary-foreground: 0 0% 100%; /* White */
-    --sidebar-accent: 210 40% 92.1%; /* Lighter Grayish Blue for hover */
-    --sidebar-accent-foreground: 224 71.4% 4.1%;
-    --sidebar-border: 214.3 31.8% 91.4%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-accent: 215 50% 92%; /* Slightly bluer hover */
+    --sidebar-accent-foreground: 224 71.4% 8%; /* Darker text on hover */
+    --sidebar-border: 214.3 31.8% 88%; /* Slightly darker border */
+    --sidebar-ring: 240 60% 65%; /* Match primary */
   }
 
   .dark {
@@ -103,14 +104,15 @@
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
 
-    --sidebar-background: 222.2 80% 6.9%; /* Slightly darker than main background */
-    --sidebar-foreground: 210 40% 98%; /* Light Gray */
-    --sidebar-primary: 217.2 91.2% 59.8%; /* Medium Blue */
+    /* Updated Sidebar Variables - Dark Mode */
+    --sidebar-background: 225 60% 8%; /* Deep dark blue */
+    --sidebar-foreground: 210 40% 96%; /* Keep light text */
+    --sidebar-primary: 240 55% 70%; /* Matching softer purplish blue */
     --sidebar-primary-foreground: 0 0% 100%; /* White */
-    --sidebar-accent: 217.2 32.6% 15.5%; /* Darker hover */
-    --sidebar-accent-foreground: 210 40% 98%;
-    --sidebar-border: 217.2 32.6% 17.5%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-accent: 220 50% 15%; /* Slightly different dark blue hover */
+    --sidebar-accent-foreground: 210 40% 98%; /* Light text on hover */
+    --sidebar-border: 220 40% 20%; /* Adjusted dark border */
+    --sidebar-ring: 240 55% 70%; /* Match primary */
   }
 }
 
