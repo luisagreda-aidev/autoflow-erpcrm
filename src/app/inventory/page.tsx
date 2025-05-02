@@ -113,8 +113,7 @@ export default function InventoryPage() {
   const [isDeleting, setIsDeleting] = useState(false); // State for delete loading
   const [vehicleToDelete, setVehicleToDelete] = useState<DisplayVehicle | null>(null); // State for delete confirmation
 
-
-  // Initialize react-hook-form
+ // Initialize react-hook-form
   const form = useForm<VehicleInput>({
     resolver: zodResolver(vehicleSchema),
     defaultValues: {
@@ -138,17 +137,18 @@ export default function InventoryPage() {
     },
   });
 
-    // Debugging useEffect to show form errors in console
-   useEffect(() => {
-       if (form.formState.isSubmitSuccessful === false && Object.keys(form.formState.errors).length > 0) {
-           console.error("Form Validation Errors:", form.formState.errors); // Log validation errors
-           toast({
-               title: "Errores de validación",
-               description: "Por favor, revisa los campos marcados en rojo.",
-               variant: "destructive",
-            });
-       }
+  // Debugging useEffect to show form errors in console
+  useEffect(() => {
+     if (form.formState.isSubmitSuccessful === false && Object.keys(form.formState.errors).length > 0) {
+         console.error("Form Validation Errors:", form.formState.errors); // Log validation errors
+         toast({
+             title: "Errores de validación",
+             description: "Por favor, revisa los campos marcados en rojo.",
+             variant: "destructive",
+          });
+     }
   }, [form.formState.errors, form.formState.isSubmitSuccessful, toast]);
+
 
   // Fetch initial vehicles on component mount using Server Action
   useEffect(() => {
@@ -156,11 +156,13 @@ export default function InventoryPage() {
       setIsLoading(true);
       try {
         const dbVehicles = await getAllVehicles(); // Use Server Action
+        console.log("[fetchVehicles] Raw data from server:", dbVehicles); // Log raw data
         const displayVehicles = dbVehicles.map(v => {
           let parsedImages: string[] = [];
           try {
              // Assuming images are stored as a JSON string array of relative URLs
              parsedImages = typeof v.images === 'string' ? JSON.parse(v.images || '[]') : [];
+             console.log(`[fetchVehicles] Parsed images for vehicle ${v.id}:`, parsedImages); // Log parsed images
           } catch (e) {
             console.error(`Error parsing images JSON for vehicle ${v.id}:`, v.images, e);
             // Keep parsedImages as empty array on error
@@ -1080,82 +1082,73 @@ export default function InventoryPage() {
       {/* Vehicle Grid or Empty State */}
       {!isLoading && vehicles.length > 0 ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {vehicles.map((vehicle) => (
-            <Card key={vehicle.id} className="overflow-hidden flex flex-col shadow-md hover:shadow-lg transition-shadow duration-200">
-              <CardHeader className="p-0 relative aspect-[3/2] w-full"> {/* Make header relative */}
-                 {/* Use first image from images array, then imageUrl, then placeholder */}
-                 {/* IMPORTANT: Image URLs from filesystem are relative, prefix them */}
-                 <Image
-                    src={vehicle.images && vehicle.images.length > 0 ? vehicle.images[0] : (vehicle.imageUrl || 'https://picsum.photos/400/267?grayscale&blur=1')}
-                    alt={`${vehicle.make} ${vehicle.model}`}
-                    fill // Use fill to cover the container
-                    className="object-cover" // Ensure image covers the area
-                    data-ai-hint={`${vehicle.make} ${vehicle.model} car dealership`}
-                    sizes="(max-width: 768px) 50vw, (max-width: 1200px) 33vw, 25vw" // Responsive sizes
-                    onError={(e) => {
-                        const target = e.target as HTMLImageElement;
-                        // Check if the error source is already the placeholder to prevent infinite loops
-                        if (target.src !== 'https://picsum.photos/400/267?grayscale&blur=1') {
-                             target.src = 'https://picsum.photos/400/267?grayscale&blur=1';
-                             target.alt = 'Placeholder Image';
-                             console.warn(`Failed to load image: ${vehicle.images && vehicle.images.length > 0 ? vehicle.images[0] : vehicle.imageUrl}, falling back to placeholder.`);
-                         }
-                    }}
-                    priority={false} // Consider setting priority based on position
-                />
-                 {vehicle.images && vehicle.images.length > 1 && (
-                    <Badge variant="secondary" className="absolute bottom-2 right-2 text-xs">
-                      {vehicle.images.length} fotos
+          {vehicles.map((vehicle) => {
+             // Determine the image source
+            let imageSrc = vehicle.images && vehicle.images.length > 0
+              ? vehicle.images[0]
+              : (vehicle.imageUrl || 'https://picsum.photos/400/267?grayscale&blur=1');
+
+            console.log(`[Vehicle Card ${vehicle.id}] Raw images:`, vehicle.images);
+            console.log(`[Vehicle Card ${vehicle.id}] Raw imageUrl:`, vehicle.imageUrl);
+            console.log(`[Vehicle Card ${vehicle.id}] Determined imageSrc:`, imageSrc);
+
+            return (
+              <Card key={vehicle.id} className="overflow-hidden flex flex-col shadow-md hover:shadow-lg transition-shadow duration-200">
+                <CardHeader className="p-0 relative aspect-[3/2] w-full"> {/* Make header relative */}
+                   {/* Use determined image source */}
+                   <Image
+                      src={imageSrc}
+                      alt={`${vehicle.make} ${vehicle.model}`}
+                      fill // Use fill to cover the container
+                      className="object-cover" // Ensure image covers the area
+                      data-ai-hint={`${vehicle.make} ${vehicle.model} car dealership`}
+                      sizes="(max-width: 768px) 50vw, (max-width: 1200px) 33vw, 25vw" // Responsive sizes
+                      onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          console.error(`[Image Error] Failed to load image for vehicle ${vehicle.id}: ${imageSrc}`); // Log error
+                          // Check if the error source is already the placeholder to prevent infinite loops
+                          if (target.src !== 'https://picsum.photos/400/267?grayscale&blur=1') {
+                               target.src = 'https://picsum.photos/400/267?grayscale&blur=1';
+                               target.alt = 'Placeholder Image';
+                               console.warn(`[Image Error] Falling back to placeholder for vehicle ${vehicle.id}.`);
+                           }
+                      }}
+                      onLoad={() => console.log(`[Image Load] Successfully loaded image for vehicle ${vehicle.id}: ${imageSrc}`)} // Log success
+                      priority={false} // Consider setting priority based on position
+                  />
+                   {vehicle.images && vehicle.images.length > 1 && (
+                      <Badge variant="secondary" className="absolute bottom-2 right-2 text-xs">
+                        {vehicle.images.length} fotos
+                      </Badge>
+                    )}
+                </CardHeader>
+                <CardContent className="p-4 grid gap-1 flex-grow">
+                  <div className="flex items-center justify-between gap-2">
+                    <CardTitle className="text-base font-semibold leading-tight truncate" title={`${vehicle.make} ${vehicle.model}`}>
+                      {vehicle.make} {vehicle.model}
+                    </CardTitle>
+                    <Badge
+                      className={cn("text-xs shrink-0", getStatusBadgeVariant(vehicle.status))}
+                    >
+                      {vehicle.status}
                     </Badge>
-                  )}
-              </CardHeader>
-              <CardContent className="p-4 grid gap-1 flex-grow">
-                <div className="flex items-center justify-between gap-2">
-                  <CardTitle className="text-base font-semibold leading-tight truncate" title={`${vehicle.make} ${vehicle.model}`}>
-                    {vehicle.make} {vehicle.model}
-                  </CardTitle>
-                  <Badge
-                    className={cn("text-xs shrink-0", getStatusBadgeVariant(vehicle.status))}
-                  >
-                    {vehicle.status}
-                  </Badge>
-                </div>
-                <CardDescription className="text-xs">
-                  {vehicle.year} - {vehicle.mileage.toLocaleString()} km
-                </CardDescription>
-                <p className="font-semibold text-lg mt-1">
-                  {/* Ensure price is treated as number before formatting */}
-                  {typeof vehicle.price === 'number' ? vehicle.price.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' }) : 'Precio no disponible'}
-                </p>
-                <p className="text-xs text-muted-foreground mt-auto pt-2 truncate" title={`VIN: ${vehicle.vin}`}>VIN: {vehicle.vin}</p>
-              </CardContent>
-              <CardFooter className="flex justify-end gap-2 p-4 pt-0 border-t mt-auto">
-                <Button variant="outline" size="sm" onClick={() => openDetailsModal(vehicle)}>Ver Detalles</Button>
-                 {/* Placeholder for Edit/Delete */}
-                 {/* <Button variant="ghost" size="sm">Editar</Button> */}
-                 {/* Delete Button Trigger - moved inside AlertDialog */}
-                 {/* <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                      <Button variant="destructive" size="sm" onClick={() => confirmDeleteVehicle(vehicle)}>
-                          <Trash2 className="h-4 w-4" />
-                      </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                      <AlertDialogHeader>
-                      <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                          Esta acción no se puede deshacer. Esto eliminará permanentemente el vehículo {vehicle.make} {vehicle.model}.
-                      </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                      <AlertDialogCancel onClick={() => setVehicleToDelete(null)}>Cancelar</AlertDialogCancel>
-                      <AlertDialogAction onClick={() => handleDeleteVehicle(vehicle.id)}>Eliminar</AlertDialogAction>
-                      </AlertDialogFooter>
-                  </AlertDialogContent>
-                 </AlertDialog> */}
-              </CardFooter>
-            </Card>
-          ))}
+                  </div>
+                  <CardDescription className="text-xs">
+                    {vehicle.year} - {vehicle.mileage.toLocaleString()} km
+                  </CardDescription>
+                  <p className="font-semibold text-lg mt-1">
+                    {/* Ensure price is treated as number before formatting */}
+                    {typeof vehicle.price === 'number' ? vehicle.price.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' }) : 'Precio no disponible'}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-auto pt-2 truncate" title={`VIN: ${vehicle.vin}`}>VIN: {vehicle.vin}</p>
+                </CardContent>
+                <CardFooter className="flex justify-end gap-2 p-4 pt-0 border-t mt-auto">
+                  <Button variant="outline" size="sm" onClick={() => openDetailsModal(vehicle)}>Ver Detalles</Button>
+                   {/* Delete button trigger inside AlertDialog (in details modal) */}
+                </CardFooter>
+              </Card>
+            );
+          })}
         </div>
       ) : ( !isLoading && // Only show empty state if not loading
         // Empty State Card
@@ -1372,11 +1365,8 @@ export default function InventoryPage() {
              </DialogContent>
         </Dialog>
 
-        {/* Delete Confirmation Dialog - Removed from here, integrated into Details Dialog */}
-        {/* <AlertDialog open={!!vehicleToDelete} onOpenChange={(open) => !open && setVehicleToDelete(null)}>
-            ... (content moved) ...
-        </AlertDialog> */}
-
     </div>
   );
 }
+
+    
