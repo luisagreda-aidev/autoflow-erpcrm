@@ -89,8 +89,8 @@ export default function ReportsPage() {
     { title: "Vehículos Totales", value: reportData?.totalVehicles ?? '--', description: "Número total en inventario.", icon: Car },
     { title: "Precio Promedio", value: reportData?.averagePrice ? reportData.averagePrice.toLocaleString('es-ES', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0, maximumFractionDigits: 0 }) : '--', description: "Valor promedio (disp./res./prep.).", icon: BarChart3 },
     { title: "Km Promedio", value: reportData?.averageMileage ? Math.round(reportData.averageMileage).toLocaleString('es-ES') + ' km' : '--', description: "Promedio km (disp./res./prep.).", icon: Activity },
-    // Add more cards as needed, e.g., for Leads once implemented
-    { title: "Leads (Próximamente)", value: '--', description: "Rendimiento de leads.", icon: Users },
+    // Updated Leads card title
+    { title: "Leads", value: '--', description: "Rendimiento de leads.", icon: Users },
   ];
 
 
