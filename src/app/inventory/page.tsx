@@ -239,29 +239,37 @@ export default function InventoryPage() {
 
   // Submit handler using server action
   const onSubmit = (data: VehicleInput) => {
-     console.log("[onSubmit] Form data submitted:", data); // Log raw form data
+     console.log("[onSubmit] Form data submitted (raw):", data); // Log raw form data
     startTransition(async () => {
         console.log("[onSubmit] Starting transition...");
         try {
-            console.log("[onSubmit] Processing images...");
+            console.log("[onSubmit] Processing images to Data URIs...");
             // --- Convert File objects to Data URIs for submission ---
             const uploadedImageUrls = await Promise.all(
                 (data.images || []).map(async (file) => {
                     return new Promise<string>((resolve, reject) => {
                         const reader = new FileReader();
                         reader.onload = () => {
-                            console.log(`[onSubmit] Image read successfully: ${file.name}`);
+                            console.log(`[onSubmit] Image read successfully: ${file.name} (Result length: ${reader.result?.toString().length})`);
                             resolve(reader.result as string);
                         };
                         reader.onerror = (error) => {
                              console.error(`[onSubmit] Error reading image ${file.name}:`, error);
-                             reject(error);
+                             reject(new Error(`Error reading file ${file.name}`));
+                        };
+                         reader.onabort = () => {
+                            console.warn(`[onSubmit] Image read aborted: ${file.name}`);
+                            reject(new Error(`File reading aborted for ${file.name}`));
                         };
                         reader.readAsDataURL(file); // Read file as Data URI
                     });
                 })
             );
-            console.log("[onSubmit] Image Data URIs generated:", uploadedImageUrls.length);
+            console.log("[onSubmit] Image Data URIs generated:", uploadedImageUrls.length > 0 ? `${uploadedImageUrls.length} images` : 'No images');
+            // Log first few chars of first data URI if exists
+            if (uploadedImageUrls.length > 0) {
+                console.log("[onSubmit] First Data URI start:", uploadedImageUrls[0].substring(0, 100) + "...");
+            }
 
 
             // Prepare data for the database (matching the expected type in the Server Action)
@@ -285,13 +293,24 @@ export default function InventoryPage() {
                 imageUrl: data.imageUrl || (uploadedImageUrls.length > 0 ? uploadedImageUrls[0] : null),
                 images: JSON.stringify(uploadedImageUrls), // Stringify image data URIs
             };
-            console.log("[onSubmit] Data prepared for action:", vehicleDataForAction);
+            console.log("[onSubmit] Data prepared for action:", {
+                ...vehicleDataForAction,
+                 // Avoid logging potentially huge image data strings in production
+                 images: `JSON string with ${uploadedImageUrls.length} image(s)`,
+                 imageUrl: vehicleDataForAction.imageUrl ? vehicleDataForAction.imageUrl.substring(0, 100) + "..." : null
+            });
 
 
             // Call the Server Action
             console.log("[onSubmit] Calling addVehicle server action...");
             const newVehicleId = await addVehicle(vehicleDataForAction);
-            console.log("[onSubmit] Server action returned new ID:", newVehicleId);
+            console.log("[onSubmit] Server action returned new vehicle ID:", newVehicleId);
+
+            // --- Verify ID before proceeding ---
+            if (typeof newVehicleId !== 'number' || newVehicleId <= 0) {
+                throw new Error("Server action did not return a valid new vehicle ID.");
+            }
+
 
             // --- Optimistic Update (using data prepared for the action) ---
             const newDisplayVehicle: DisplayVehicle = {
@@ -325,27 +344,44 @@ export default function InventoryPage() {
             toast({
                 title: "Vehículo Añadido",
                 description: `${data.make} ${data.model} ha sido añadido al inventario.`,
-                variant: "default",
+                variant: "default", // Use "success" if available or default
             });
             setIsAddVehicleOpen(false);
             form.reset();
+            console.log("[onSubmit] Form reset.");
+
             // Clean up previews after successful submission
-            if (imagePreviews && imagePreviews.length > 0) {
-                 imagePreviews.forEach(img => URL.revokeObjectURL(img.preview));
+            try {
+                 if (imagePreviews && imagePreviews.length > 0) {
+                     imagePreviews.forEach(img => URL.revokeObjectURL(img.preview));
+                     console.log("[onSubmit] Object URLs revoked.");
+                 }
+                setImagePreviews([]);
+                console.log("[onSubmit] Image previews state cleared.");
+            } catch (revokeError) {
+                 console.error("[onSubmit] Error revoking object URLs:", revokeError);
             }
-            setImagePreviews([]);
-            console.log("[onSubmit] Form reset and previews cleaned.");
+
+            console.log("[onSubmit] Submission process finished successfully.");
         } catch (error: any) {
-            console.error("[onSubmit] Error during vehicle submission:", error); // Log the specific error
-             console.error("[onSubmit] Error stack:", error.stack); // Log the stack trace
+            console.error("[onSubmit] Error during vehicle submission process:", error);
+            console.error("[onSubmit] Error Name:", error.name);
+            console.error("[onSubmit] Error Message:", error.message);
+            console.error("[onSubmit] Error Stack:", error.stack);
             toast({
                 title: "Error al añadir vehículo",
-                description: `No se pudo guardar el vehículo. ${error.message ? `Detalle: ${error.message}` : 'Revisa la consola para más información.'}`, // Include error message
+                // Provide more specific feedback based on common errors if possible
+                description: error.message.includes('VIN') ? `Error: El VIN ya existe.` :
+                             error.message.includes('constraint') ? `Error: Valor inválido proporcionado.` :
+                             error.message.includes('reading file') ? `Error al procesar una imagen.` :
+                             error.message || "No se pudo guardar el vehículo. Revisa la consola para más detalles.",
                 variant: "destructive",
             });
              console.log("[onSubmit] End transition with error.");
+        } finally {
+            // This block executes regardless of success or error
+            console.log("[onSubmit] End transition (finally block).");
         }
-         console.log("[onSubmit] End transition.");
     });
 };
 
@@ -849,11 +885,18 @@ export default function InventoryPage() {
                 setIsAddVehicleOpen(open);
                 if (!open) {
                      // Clean up previews when closing dialog if not submitted
-                     if (imagePreviews && imagePreviews.length > 0) {
-                        imagePreviews.forEach(img => URL.revokeObjectURL(img.preview));
+                     try {
+                         if (imagePreviews && imagePreviews.length > 0) {
+                            imagePreviews.forEach(img => URL.revokeObjectURL(img.preview));
+                         }
+                     } catch (revokeError) {
+                         console.error("Error revoking object URLs on dialog close:", revokeError);
                      }
                     setImagePreviews([]);
                     form.reset(); // Reset form state
+                    console.log("Add vehicle dialog closed, previews cleaned, form reset.");
+                } else {
+                     console.log("Add vehicle dialog opened.");
                 }
             }}>
             <DialogTrigger asChild>
@@ -974,11 +1017,18 @@ export default function InventoryPage() {
                 <Dialog open={isAddVehicleOpen} onOpenChange={(open) => {
                      setIsAddVehicleOpen(open);
                      if (!open) {
-                         if (imagePreviews && imagePreviews.length > 0) {
-                           imagePreviews.forEach(img => URL.revokeObjectURL(img.preview));
-                         }
+                          try {
+                             if (imagePreviews && imagePreviews.length > 0) {
+                               imagePreviews.forEach(img => URL.revokeObjectURL(img.preview));
+                             }
+                          } catch (revokeError) {
+                              console.error("Error revoking object URLs on empty state dialog close:", revokeError);
+                          }
                          setImagePreviews([]);
                          form.reset();
+                         console.log("Add vehicle dialog (empty state) closed, previews cleaned, form reset.");
+                     } else {
+                         console.log("Add vehicle dialog (empty state) opened.");
                      }
                  }}>
                     <DialogTrigger asChild>
