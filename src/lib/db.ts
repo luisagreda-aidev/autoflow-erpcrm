@@ -104,11 +104,15 @@ export async function addVehicle(vehicleData: Omit<Vehicle, 'id' | 'createdAt' |
   `);
 
   try {
-    const info = stmt.run({
-      ...vehicleData,
-      features: vehicleData.features ?? '[]', // Ensure features is a JSON string
-      images: vehicleData.images ?? '[]' // Ensure images is a JSON string
-    });
+    // Ensure features and images are valid JSON strings if provided, default to '[]'
+    const dataToInsert = {
+        ...vehicleData,
+        features: typeof vehicleData.features === 'string' ? vehicleData.features : JSON.stringify(vehicleData.features || []),
+        images: typeof vehicleData.images === 'string' ? vehicleData.images : JSON.stringify(vehicleData.images || []),
+        cost: vehicleData.cost === undefined ? null : vehicleData.cost // Handle undefined cost
+    };
+
+    const info = stmt.run(dataToInsert);
     // Explicitly cast info.lastInsertRowid to number
     return Number(info.lastInsertRowid);
   } catch (error: any) {
@@ -163,8 +167,21 @@ export async function getVehicleById(id: number): Promise<Vehicle | undefined> {
  * @returns true if the update was successful, false otherwise.
  */
 export async function updateVehicle(id: number, updates: Partial<Omit<Vehicle, 'id' | 'createdAt' | 'updatedAt'>>): Promise<boolean> {
+  // Ensure features and images are stringified if they are arrays
+  const updatesWithStringifiedJson = { ...updates };
+  if (updates.features && typeof updates.features !== 'string') {
+    updatesWithStringifiedJson.features = JSON.stringify(updates.features);
+  }
+  if (updates.images && typeof updates.images !== 'string') {
+    updatesWithStringifiedJson.images = JSON.stringify(updates.images);
+  }
+  if (updates.cost === undefined) {
+    updatesWithStringifiedJson.cost = null;
+  }
+
+
   // Build the SET part of the SQL query dynamically
-  const setClauses = Object.keys(updates)
+  const setClauses = Object.keys(updatesWithStringifiedJson)
     .map(key => `${key} = @${key}`)
     .join(', ');
 
@@ -176,7 +193,7 @@ export async function updateVehicle(id: number, updates: Partial<Omit<Vehicle, '
   const stmt = db.prepare(`UPDATE vehicles SET ${setClauses} WHERE id = @id`);
 
   try {
-    const info = stmt.run({ ...updates, id });
+    const info = stmt.run({ ...updatesWithStringifiedJson, id });
     return info.changes > 0; // Returns true if at least one row was changed
   } catch (error: any) {
      // Handle potential unique constraint error for VIN if updated
@@ -215,7 +232,7 @@ export async function deleteVehicle(id: number): Promise<boolean> {
  * Closes the database connection.
  * Call this when the application is shutting down.
  */
-export function closeDb() {
+export async function closeDb() { // Made async
   db.close();
   console.log("Database connection closed.");
 }
@@ -223,10 +240,8 @@ export function closeDb() {
 // Ensure the database connection is closed gracefully on exit
 process.on('exit', () => closeDb());
 process.on('SIGINT', () => {
-  closeDb();
-  process.exit(0);
+  closeDb().then(() => process.exit(0));
 });
 process.on('SIGTERM', () => {
-  closeDb();
-  process.exit(0);
+  closeDb().then(() => process.exit(0));
 });
