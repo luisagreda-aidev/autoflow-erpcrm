@@ -19,6 +19,8 @@ import Link from 'next/link';
 import { Users, Car, BarChart3, Settings } from 'lucide-react';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation'; // Import usePathname
+import { motion, AnimatePresence } from 'framer-motion'; // Import motion and AnimatePresence
+
 
 export default function AppLayout({
   children,
@@ -26,6 +28,18 @@ export default function AppLayout({
   children: React.ReactNode;
 }>) {
   const pathname = usePathname(); // Get the current path
+
+  const pageVariants = {
+    initial: { opacity: 0, y: 20 },
+    in: { opacity: 1, y: 0 },
+    out: { opacity: 0, y: -20 },
+  };
+
+  const pageTransition = {
+    type: 'tween',
+    ease: 'anticipate',
+    duration: 0.3,
+  };
 
   return (
      <SidebarProvider>
@@ -124,9 +138,20 @@ export default function AppLayout({
                  <SidebarTrigger className="hidden md:flex"/>
                  {/* Optional: Add global search or other header elements here */}
             </header>
-            <main className="flex-1 overflow-auto p-4 sm:px-6 sm:py-0">
-              {children}
-            </main>
+             {/* Add AnimatePresence and motion.main for transitions */}
+             <AnimatePresence mode="wait">
+               <motion.main
+                 key={pathname} // Important for AnimatePresence to detect route changes
+                 initial="initial"
+                 animate="in"
+                 exit="out"
+                 variants={pageVariants}
+                 transition={pageTransition}
+                 className="flex-1 overflow-auto p-4 sm:px-6 sm:py-0"
+                >
+                {children}
+              </motion.main>
+             </AnimatePresence>
           </SidebarInset>
         </SidebarProvider>
   );
