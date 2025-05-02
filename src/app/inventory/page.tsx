@@ -113,7 +113,8 @@ export default function InventoryPage() {
   const [isDeleting, setIsDeleting] = useState(false); // State for delete loading
   const [vehicleToDelete, setVehicleToDelete] = useState<DisplayVehicle | null>(null); // State for delete confirmation
 
-  // Initialize react-hook-form - MOVED UP
+
+  // Initialize react-hook-form
   const form = useForm<VehicleInput>({
     resolver: zodResolver(vehicleSchema),
     defaultValues: {
@@ -136,6 +137,18 @@ export default function InventoryPage() {
       images: [], // Initialize images array (File objects for validation)
     },
   });
+
+    // Debugging useEffect to show form errors in console
+   useEffect(() => {
+       if (form.formState.isSubmitSuccessful === false && Object.keys(form.formState.errors).length > 0) {
+           console.error("Form Validation Errors:", form.formState.errors); // Log validation errors
+           toast({
+               title: "Errores de validación",
+               description: "Por favor, revisa los campos marcados en rojo.",
+               variant: "destructive",
+            });
+       }
+  }, [form.formState.errors, form.formState.isSubmitSuccessful, toast]);
 
   // Fetch initial vehicles on component mount using Server Action
   useEffect(() => {
@@ -183,17 +196,6 @@ export default function InventoryPage() {
     fetchVehicles();
   }, [toast]);
 
-  // Debugging useEffect to show form errors in console - NOW form is initialized
-  useEffect(() => {
-       if (form.formState.isSubmitSuccessful === false && Object.keys(form.formState.errors).length > 0) {
-           console.error("Form Validation Errors:", form.formState.errors); // Log validation errors
-           toast({
-               title: "Errores de validación",
-               description: "Por favor, revisa los campos marcados en rojo.",
-               variant: "destructive",
-            });
-       }
-  }, [form.formState.errors, form.formState.isSubmitSuccessful, toast]);
 
 
   // Clean up Object URLs on component unmount or when imagePreviews changes
@@ -244,14 +246,22 @@ export default function InventoryPage() {
         }
         // Correctly access the refine check within the Zod schema
         const imageSchema = vehicleSchema.shape.images.element;
-         if (!imageSchema._def.schema._def.checks.find((check: any) => check.kind === 'refine' && check.message?.includes('Solo se aceptan'))?.check(file.type)) {
-             toast({
-                 title: "Tipo de Archivo No Válido",
-                 description: `"${file.name}" tiene un formato no soportado.`,
-                 variant: "destructive"
-             });
-             return false;
-         }
+         // Check if imageSchema and its nested properties exist before accessing refine
+         if (imageSchema?._def?.schema?._def?.checks) {
+           const refineCheck = imageSchema._def.schema._def.checks.find((check: any) => check.kind === 'refine' && check.message?.includes('Solo se aceptan'));
+            if (refineCheck && !refineCheck.check(file.type)) {
+                toast({
+                    title: "Tipo de Archivo No Válido",
+                    description: `"${file.name}" tiene un formato no soportado.`,
+                    variant: "destructive"
+                });
+                return false;
+            }
+        } else {
+            console.warn("Could not find Zod refine check for image type. Skipping type validation.");
+            // Optionally, you could add a basic type check here if Zod check fails to load
+            // if (!file.type.startsWith('image/')) { ... return false; }
+        }
         return true;
       });
 
@@ -363,9 +373,12 @@ export default function InventoryPage() {
         // Derive optimistic URLs based on filenames (adjust if server changes names significantly)
         const optimisticImageUrls = (data.images || []).map(file => {
              // Simplified assumption - use a placeholder structure or refine based on actual server logic
-             const uniqueSuffix = `temp-${Date.now()}`; // Placeholder for uniqueness
+             // This needs to match the logic in vehicleActions.ts `addVehicle`
              const extension = file.name.split('.').pop();
-             return `/uploads/vehicles/${file.name.split('.')[0]}-${uniqueSuffix}.${extension}`;
+             const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+             // Replicate the unique filename generation logic (approximately)
+             const uniqueSuffix = `temp-${Date.now()}`; // Placeholder, actual suffix is generated on server
+             return `/uploads/vehicles/${baseName}-${uniqueSuffix}.${extension}`;
          });
 
         console.log("[onSubmit Vehicle] Generating optimistic image URLs:", optimisticImageUrls);
@@ -1120,6 +1133,26 @@ export default function InventoryPage() {
                 <Button variant="outline" size="sm" onClick={() => openDetailsModal(vehicle)}>Ver Detalles</Button>
                  {/* Placeholder for Edit/Delete */}
                  {/* <Button variant="ghost" size="sm">Editar</Button> */}
+                 {/* Delete Button Trigger - moved inside AlertDialog */}
+                 {/* <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                      <Button variant="destructive" size="sm" onClick={() => confirmDeleteVehicle(vehicle)}>
+                          <Trash2 className="h-4 w-4" />
+                      </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                      <AlertDialogHeader>
+                      <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                          Esta acción no se puede deshacer. Esto eliminará permanentemente el vehículo {vehicle.make} {vehicle.model}.
+                      </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                      <AlertDialogCancel onClick={() => setVehicleToDelete(null)}>Cancelar</AlertDialogCancel>
+                      <AlertDialogAction onClick={() => handleDeleteVehicle(vehicle.id)}>Eliminar</AlertDialogAction>
+                      </AlertDialogFooter>
+                  </AlertDialogContent>
+                 </AlertDialog> */}
               </CardFooter>
             </Card>
           ))}
@@ -1287,18 +1320,46 @@ export default function InventoryPage() {
                          </div>
                        </ScrollArea>
                       <DialogFooter className="mt-4 pt-4 border-t flex justify-between items-center">
-                         {/* Delete Button Trigger */}
-                          <AlertDialogTrigger asChild>
-                              <Button
-                                  variant="destructive"
-                                  size="sm"
-                                  onClick={() => confirmDeleteVehicle(selectedVehicle)}
-                                  disabled={isDeleting}
-                              >
-                                  {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                                  <span className="ml-1">Eliminar Vehículo</span>
-                              </Button>
-                           </AlertDialogTrigger>
+                         {/* Wrap Delete Button in AlertDialog */}
+                          <AlertDialog open={!!vehicleToDelete} onOpenChange={(open) => !open && setVehicleToDelete(null)}>
+                              <AlertDialogTrigger asChild>
+                                  <Button
+                                      variant="destructive"
+                                      size="sm"
+                                      onClick={() => confirmDeleteVehicle(selectedVehicle)}
+                                      disabled={isDeleting}
+                                  >
+                                      {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                                      <span className="ml-1">Eliminar Vehículo</span>
+                                  </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                  <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                      Esta acción no se puede deshacer. Esto eliminará permanentemente el vehículo <span className="font-semibold">{vehicleToDelete?.make} {vehicleToDelete?.model} (VIN: {vehicleToDelete?.vin})</span> y todas sus imágenes asociadas.
+                                  </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                  <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
+                                  <AlertDialogAction
+                                      onClick={() => vehicleToDelete && handleDeleteVehicle(vehicleToDelete.id)}
+                                      disabled={isDeleting}
+                                      className={cn(
+                                          "bg-destructive text-destructive-foreground hover:bg-destructive/90", // Destructive variant styling
+                                          isDeleting && "opacity-50 cursor-not-allowed"
+                                      )}
+                                  >
+                                      {isDeleting ? (
+                                      <>
+                                          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Eliminando...
+                                      </>
+                                      ) : "Eliminar"}
+                                  </AlertDialogAction>
+                                  </AlertDialogFooter>
+                              </AlertDialogContent>
+                          </AlertDialog>
+
                           {/* Edit Button Placeholder */}
                           {/* <Button variant="outline" size="sm">Editar</Button> */}
                           <DialogClose asChild>
@@ -1311,34 +1372,10 @@ export default function InventoryPage() {
              </DialogContent>
         </Dialog>
 
-        {/* Delete Confirmation Dialog */}
-        <AlertDialog open={!!vehicleToDelete} onOpenChange={(open) => !open && setVehicleToDelete(null)}>
-            <AlertDialogContent>
-                <AlertDialogHeader>
-                <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
-                <AlertDialogDescription>
-                    Esta acción no se puede deshacer. Esto eliminará permanentemente el vehículo <span className="font-semibold">{vehicleToDelete?.make} {vehicleToDelete?.model} (VIN: {vehicleToDelete?.vin})</span> y todas sus imágenes asociadas.
-                </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
-                <AlertDialogAction
-                    onClick={() => vehicleToDelete && handleDeleteVehicle(vehicleToDelete.id)}
-                    disabled={isDeleting}
-                     className={cn(
-                         "bg-destructive text-destructive-foreground hover:bg-destructive/90", // Destructive variant styling
-                         isDeleting && "opacity-50 cursor-not-allowed"
-                     )}
-                >
-                    {isDeleting ? (
-                    <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Eliminando...
-                    </>
-                    ) : "Eliminar"}
-                </AlertDialogAction>
-                </AlertDialogFooter>
-            </AlertDialogContent>
-        </AlertDialog>
+        {/* Delete Confirmation Dialog - Removed from here, integrated into Details Dialog */}
+        {/* <AlertDialog open={!!vehicleToDelete} onOpenChange={(open) => !open && setVehicleToDelete(null)}>
+            ... (content moved) ...
+        </AlertDialog> */}
 
     </div>
   );
