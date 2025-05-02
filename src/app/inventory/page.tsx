@@ -133,7 +133,7 @@ export default function InventoryPage() {
     defaultValues: {
       make: "",
       model: "",
-      year: new Date().getFullYear(),
+      year: undefined, // Use undefined for number fields to satisfy zod optional/required
       vin: "",
       price: undefined, // Default to undefined for zod number validation
       mileage: undefined, // Default to undefined for zod number validation
@@ -151,18 +151,9 @@ export default function InventoryPage() {
     },
   });
 
-   // Check for form errors on submission failure
-   useEffect(() => {
-       if (form.formState.isSubmitSuccessful === false && Object.keys(form.formState.errors).length > 0) {
-           console.error("Form Validation Errors:", form.formState.errors);
-           toast({
-               title: "Errores de validación",
-               description: "Por favor, revisa los campos marcados en rojo.",
-               variant: "destructive",
-           });
-       }
-   }, [form.formState.isSubmitSuccessful, form.formState.errors, toast]);
-
+   // REMOVED: useEffect for logging form validation errors.
+   // Field-specific errors are shown by FormMessage components.
+   // Submission errors are handled in the onSubmit catch block.
 
   // Clean up Object URLs on component unmount or when imagePreviews changes
   useEffect(() => {
@@ -389,20 +380,11 @@ export default function InventoryPage() {
                         value={field.value ?? ''} // Handle potential undefined/null value
                         onChange={e => {
                             const val = e.target.value;
-                            // Parse to number or keep as empty string if input is cleared
-                            field.onChange(val === '' ? '' : parseInt(val, 10) || undefined);
+                            // Parse to number or keep as undefined if input is cleared or invalid
+                            const num = parseInt(val, 10);
+                            field.onChange(val === '' || isNaN(num) ? undefined : num);
                         }}
-                         onBlur={e => {
-                             // Ensure a valid number or keep undefined on blur if invalid
-                             const numValue = parseInt(e.target.value, 10);
-                             if (isNaN(numValue) || numValue < 1900 || numValue > new Date().getFullYear() + 1) {
-                                // Let Zod handle the validation message
-                                // Optionally, reset to undefined if invalid on blur
-                                 field.onChange(undefined);
-                             } else {
-                                field.onChange(numValue);
-                             }
-                         }}
+                         onBlur={field.onBlur} // RHF handles blur validation
                     />
                 </FormControl>
                 <FormMessage />
@@ -455,16 +437,9 @@ export default function InventoryPage() {
                                     const val = e.target.value;
                                     const num = parseInt(val, 10);
                                     // Allow empty string, otherwise parse
-                                    field.onChange(val === '' ? '' : num >= 0 ? num : undefined);
+                                    field.onChange(val === '' || isNaN(num) || num < 0 ? undefined : num);
                                 }}
-                                onBlur={e => {
-                                     const numValue = parseInt(e.target.value, 10);
-                                     if (isNaN(numValue) || numValue < 0) {
-                                         field.onChange(undefined); // Set to undefined if invalid/negative on blur for Zod validation
-                                     } else {
-                                        field.onChange(numValue);
-                                     }
-                                 }}
+                                onBlur={field.onBlur} // RHF handles blur validation
                             />
                         </FormControl>
                         <FormMessage />
@@ -529,17 +504,10 @@ export default function InventoryPage() {
                             onChange={e => {
                                 const val = e.target.value;
                                 const num = parseFloat(val);
-                                // Allow empty string, otherwise parse
-                                field.onChange(val === '' ? '' : num > 0 ? num : undefined);
+                                // Allow empty string, otherwise parse, ensure > 0
+                                field.onChange(val === '' || isNaN(num) || num <= 0 ? undefined : num);
                             }}
-                             onBlur={e => {
-                                 const numValue = parseFloat(e.target.value);
-                                 if (isNaN(numValue) || numValue <= 0) {
-                                      field.onChange(undefined); // Set undefined for Zod validation if invalid/non-positive
-                                 } else {
-                                     field.onChange(numValue);
-                                 }
-                             }}
+                            onBlur={field.onBlur} // RHF handles blur validation
                         />
                     </FormControl>
                     <FormMessage />
@@ -561,19 +529,12 @@ export default function InventoryPage() {
                             value={field.value ?? ''} // Handle null/undefined from defaultValues or reset
                             onChange={e => {
                                 const val = e.target.value;
-                                // Allow empty string (will be treated as null/undefined by zod optional)
-                                // Parse if not empty
-                                field.onChange(val === '' ? undefined : parseFloat(val) >= 0 ? parseFloat(val) : undefined);
+                                const num = parseFloat(val);
+                                // Allow empty string (treated as null/undefined by zod optional)
+                                // Parse if not empty, ensure >= 0
+                                field.onChange(val === '' || isNaN(num) || num < 0 ? undefined : num);
                             }}
-                             onBlur={e => {
-                                 const numValue = parseFloat(e.target.value);
-                                 // If it's NaN or negative after typing, clear it on blur
-                                 if (isNaN(numValue) || numValue < 0) {
-                                      field.onChange(undefined);
-                                 } else {
-                                     field.onChange(numValue); // Keep valid number
-                                 }
-                             }}
+                            onBlur={field.onBlur} // RHF handles blur validation
                         />
                     </FormControl>
                     <FormMessage />
@@ -966,7 +927,8 @@ export default function InventoryPage() {
                   {vehicle.year} - {vehicle.mileage.toLocaleString()} km
                 </CardDescription>
                 <p className="font-semibold text-lg mt-1">
-                  {vehicle.price.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
+                  {/* Ensure price is treated as number before formatting */}
+                  {typeof vehicle.price === 'number' ? vehicle.price.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' }) : 'Precio no disponible'}
                 </p>
                 <p className="text-xs text-muted-foreground mt-auto pt-2 truncate" title={`VIN: ${vehicle.vin}`}>VIN: {vehicle.vin}</p>
               </CardContent>
@@ -1088,8 +1050,8 @@ export default function InventoryPage() {
 
 
                             <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
-                                <div><strong>Precio:</strong> {selectedVehicle.price.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}</div>
-                                <div><strong>Kilometraje:</strong> {selectedVehicle.mileage.toLocaleString()} km</div>
+                                <div><strong>Precio:</strong> {typeof selectedVehicle.price === 'number' ? selectedVehicle.price.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' }) : 'N/D'}</div>
+                                <div><strong>Kilometraje:</strong> {typeof selectedVehicle.mileage === 'number' ? selectedVehicle.mileage.toLocaleString() : 'N/D'} km</div>
                                 <div><strong>Color:</strong> {selectedVehicle.color || 'N/D'}</div>
                                 <div><strong>Estado:</strong> <Badge className={cn("text-xs ml-1", getStatusBadgeVariant(selectedVehicle.status))}>{selectedVehicle.status}</Badge></div>
                                 <div><strong>Motor:</strong> {selectedVehicle.engine || 'N/D'}</div>
