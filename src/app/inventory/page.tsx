@@ -235,8 +235,17 @@ export default function InventoryPage() {
         // and get back an array of URLs.
         // For now, we'll simulate this by using the data URIs from previews or just placeholders.
         // THIS IS NOT PRODUCTION READY for image handling.
-        const uploadedImageUrls = imagePreviews.map(img => img.preview); // Using blob URLs as placeholders
-        // const uploadedImageUrls = await uploadFilesToStorage(data.images); // Example real function
+        const uploadedImageUrls = await Promise.all(
+             (data.images || []).map(async (file) => {
+                 // Simulate upload / Convert file to data URI for temporary storage
+                 return new Promise<string>((resolve, reject) => {
+                     const reader = new FileReader();
+                     reader.onload = () => resolve(reader.result as string);
+                     reader.onerror = (error) => reject(error);
+                     reader.readAsDataURL(file);
+                 });
+             })
+         );
 
         const vehicleDataForDb: Omit<DbVehicle, 'id' | 'createdAt' | 'updatedAt'> = {
           make: data.make,
@@ -255,7 +264,7 @@ export default function InventoryPage() {
           entryDate: data.entryDate.toISOString(), // Store date as ISO string
           cost: data.cost ? Number(data.cost) : null, // Handle optional cost
           imageUrl: data.imageUrl || (uploadedImageUrls.length > 0 ? uploadedImageUrls[0] : null), // Use first uploaded image URL or provided URL
-          images: JSON.stringify(uploadedImageUrls), // Store image URLs as JSON string
+          images: JSON.stringify(uploadedImageUrls), // Store image URLs/Data URIs as JSON string
         };
 
         const newVehicleId = await addVehicle(vehicleDataForDb);
@@ -291,7 +300,7 @@ export default function InventoryPage() {
         toast({
           title: "Vehículo Añadido",
           description: `${data.make} ${data.model} ha sido añadido al inventario.`,
-          variant: "default",
+          variant: "default", // Changed from success to default for consistency
         });
         setIsAddVehicleOpen(false);
         form.reset();
@@ -382,7 +391,7 @@ export default function InventoryPage() {
                 <FormItem>
                     <FormLabel>Color</FormLabel>
                     <FormControl>
-                    <Input placeholder="Ej. Rojo Metálico" {...field} />
+                    <Input placeholder="Ej. Rojo Metálico" {...field} value={field.value ?? ''} />
                     </FormControl>
                     <FormMessage />
                 </FormItem>
@@ -412,7 +421,7 @@ export default function InventoryPage() {
                 <FormItem>
                     <FormLabel>Motor</FormLabel>
                     <FormControl>
-                    <Input placeholder="Ej. 1.8L Híbrido" {...field} />
+                    <Input placeholder="Ej. 1.8L Híbrido" {...field} value={field.value ?? ''}/>
                     </FormControl>
                     <FormMessage />
                 </FormItem>
@@ -463,7 +472,7 @@ export default function InventoryPage() {
                 <FormItem>
                     <FormLabel>Coste Adquisición (€)</FormLabel>
                     <FormControl>
-                        <Input type="number" step="0.01" placeholder="Ej. 12000" {...field} onChange={e => field.onChange(parseFloat(e.target.value) >= 0 ? parseFloat(e.target.value) : undefined)} />
+                        <Input type="number" step="0.01" placeholder="Ej. 12000" {...field} onChange={e => field.onChange(parseFloat(e.target.value) >= 0 ? parseFloat(e.target.value) : undefined)} value={field.value ?? ''} />
                     </FormControl>
                     <FormMessage />
                 </FormItem>
@@ -1032,4 +1041,3 @@ const parseNumber = (value: string | undefined | null): number | undefined => {
 //     await new Promise(resolve => setTimeout(resolve, 1500));
 //     return files.map((file, index) => `https://mockstorage.com/uploads/${Date.now()}-${index}-${file.name}`);
 // }
-```
