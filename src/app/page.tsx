@@ -68,7 +68,7 @@ export default function LeadsPage() {
                   <span className="sr-only sm:not-sr-only">Añadir Lead</span>
                 </Button>
               </DialogTrigger>
-              <DialogContent className="sm:max-w-[425px]">
+              <DialogContent className="sm:max-w-md"> {/* Increased width */}
                 <DialogHeader>
                   <DialogTitle>Añadir Nuevo Lead</DialogTitle>
                   <DialogDescription>
@@ -134,7 +134,7 @@ export default function LeadsPage() {
                     <DialogTrigger asChild>
                         <Button variant="outline" size="sm">Ver Detalles</Button>
                     </DialogTrigger>
-                    <DialogContent className="sm:max-w-md">
+                    <DialogContent className="sm:max-w-md"> {/* Keep consistent width */}
                         <DialogHeader>
                         <DialogTitle>{lead.name}</DialogTitle>
                         <DialogDescription>
@@ -178,7 +178,7 @@ export default function LeadsPage() {
                         </Button>
                     </DialogTrigger>
                      {/* Re-use the same DialogContent structure as above */}
-                     <DialogContent className="sm:max-w-[425px]">
+                     <DialogContent className="sm:max-w-md"> {/* Increased width */}
                         <DialogHeader>
                         <DialogTitle>Añadir Nuevo Lead</DialogTitle>
                         <DialogDescription>
@@ -224,4 +224,3 @@ export default function LeadsPage() {
     </div>
   );
 }
-    

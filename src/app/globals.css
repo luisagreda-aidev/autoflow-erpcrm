@@ -13,8 +13,8 @@
     --popover: 0 0% 100%;
     --popover-foreground: 224 71.4% 4.1%;
 
-    /* --- Corporate Primary --- */
-    --primary: 217.2 91.2% 52.8%; /* Slightly deeper, less vibrant blue */
+    /* --- Corporate Primary (Now Gray) --- */
+    --primary: 220 10% 25%; /* Corporate Dark Gray */
     --primary-foreground: 0 0% 100%; /* White */
 
     --secondary: 215 27.9% 93.9%; /* Lighter, cooler gray */
@@ -23,25 +23,25 @@
     --muted: 215 27.9% 93.9%; /* Same as secondary */
     --muted-foreground: 215.4 16.3% 56.9%; /* Softer muted gray text */
 
-    --accent: 215 27.9% 90%; /* Slightly darker accent for hover */
-    --accent-foreground: 224 71.4% 10.1%; /* Same as secondary-foreground */
+    --accent: 220 10% 35%; /* Slightly lighter gray for accent/hover */
+    --accent-foreground: 0 0% 100%; /* White text on accent */
 
-    /* --- Semantic Colors (Maintained) --- */
-    --destructive: 0 84.2% 60.2%; /* Red */
+    /* --- Semantic Colors --- */
+    --destructive: 0 75% 55%; /* Slightly adjusted Red */
     --destructive-foreground: 0 0% 100%; /* White */
-    --success: 142.1 76.2% 36.3%; /* Green */
+    --success: 140 65% 45%; /* Slightly adjusted Green */
     --success-foreground: 0 0% 100%; /* White */
-    --warning: 47.9 95.8% 53.1%; /* Yellow/Orange */
-    --warning-foreground: 24 9.8% 10%; /* Darker text on yellow for better contrast */
-    --info: 200 100% 50%; /* Blue */
+    --warning: 45 85% 55%; /* Slightly adjusted Yellow/Orange */
+    --warning-foreground: 24 9.8% 10%; /* Darker text on yellow */
+    --info: 205 80% 55%; /* Slightly adjusted Blue */
     --info-foreground: 0 0% 100%; /* White */
 
     /* --- Borders & Inputs --- */
     --border: 214.3 31.8% 88.4%; /* Slightly lighter border */
     --input: 214.3 31.8% 91.4%; /* Lighter input background */
-    --ring: 217.2 91.2% 59.8%; /* Keep original blue for focus rings for visibility */
+    --ring: 220 10% 45%; /* Adjusted ring color (related to primary) */
 
-    --chart-1: 217 91% 60%; /* Primary blue related */
+    --chart-1: 220 10% 40%; /* Primary gray related */
     --chart-2: 160 60% 45%; /* Teal */
     --chart-3: 30 80% 55%; /* Orange */
     --chart-4: 280 65% 60%; /* Purple */
@@ -50,13 +50,13 @@
     --radius: 0.5rem;
 
     /* --- Corporate Sidebar Variables - Light Mode --- */
-    --sidebar-background: 220 50% 98%; /* Very light, cool gray/blue */
-    --sidebar-foreground: 224 71.4% 15%; /* Darker text for better contrast */
+    --sidebar-background: 220 10% 25%; /* Corporate Dark Gray */
+    --sidebar-foreground: 0 0% 100%; /* White */
     --sidebar-primary: var(--primary); /* Use main primary color */
-    --sidebar-primary-foreground: var(--primary-foreground); /* Use main primary foreground */
-    --sidebar-accent: 220 40% 93%; /* Slightly darker/bluer hover */
-    --sidebar-accent-foreground: 224 71.4% 8%; /* Very dark text on hover */
-    --sidebar-border: 215 30% 85%; /* Defined border color */
+    --sidebar-primary-foreground: var(--primary-foreground);
+    --sidebar-accent: 220 10% 35%; /* Lighter gray hover */
+    --sidebar-accent-foreground: 0 0% 100%; /* White text on hover */
+    --sidebar-border: 220 10% 30%; /* Defined border color (slightly darker) */
     --sidebar-ring: var(--ring); /* Use main ring color */
   }
 
@@ -71,8 +71,8 @@
     --popover-foreground: 210 40% 98%;
 
     /* --- Corporate Primary - Dark --- */
-    --primary: 217.2 91.2% 59.8%; /* Keep original brighter blue for dark mode contrast */
-    --primary-foreground: 210 40% 98%; /* Light foreground for contrast */
+    --primary: 220 10% 35%; /* Slightly lighter Corporate Gray for dark mode */
+    --primary-foreground: 0 0% 100%; /* White */
 
     --secondary: 217.2 32.6% 17.5%; /* Darker Grayish Blue */
     --secondary-foreground: 210 40% 98%;
@@ -80,38 +80,38 @@
     --muted: 217.2 32.6% 17.5%;
     --muted-foreground: 215 20.2% 65.1%; /* Muted Light Gray */
 
-    --accent: 217.2 32.6% 23.5%; /* Slightly lighter accent for dark mode hover */
-    --accent-foreground: 210 40% 98%;
+    --accent: 220 10% 45%; /* Lighter gray accent for dark mode hover */
+    --accent-foreground: 0 0% 100%; /* White text on accent */
 
-    /* --- Semantic Colors (Maintained) --- */
-    --destructive: 0 62.8% 30.6%; /* Darker Red */
-    --destructive-foreground: 0 85.7% 97.3%; /* Light text on dark red */
-    --success: 142.1 70.6% 45.3%; /* Green */
-    --success-foreground: 210 40% 98%;
-    --warning: 47.9 95.8% 53.1%; /* Yellow/Orange */
+    /* --- Semantic Colors - Dark --- */
+    --destructive: 0 62.8% 45%; /* Darker Red */
+    --destructive-foreground: 0 0% 100%; /* Light text on dark red */
+    --success: 140 60% 40%; /* Darker Green */
+    --success-foreground: 0 0% 100%;
+    --warning: 45 80% 50%; /* Darker Yellow/Orange */
     --warning-foreground: 24 9.8% 10%; /* Dark text for contrast */
-    --info: 200 100% 50%; /* Blue */
-    --info-foreground: 210 40% 98%;
+    --info: 205 75% 50%; /* Darker Blue */
+    --info-foreground: 0 0% 100%;
 
     /* --- Borders & Inputs - Dark --- */
     --border: 217.2 32.6% 27.5%; /* Adjusted dark border */
     --input: 217.2 32.6% 17.5%;
-    --ring: 217.2 91.2% 59.8%; /* Keep original blue for focus rings */
+    --ring: 220 10% 55%; /* Adjusted dark ring */
 
-    --chart-1: 217 91% 60%;
-    --chart-2: 160 60% 45%;
-    --chart-3: 30 80% 55%;
-    --chart-4: 280 65% 60%;
-    --chart-5: 340 75% 55%;
+    --chart-1: 220 10% 45%;
+    --chart-2: 160 60% 40%;
+    --chart-3: 30 80% 50%;
+    --chart-4: 280 65% 55%;
+    --chart-5: 340 75% 50%;
 
     /* --- Corporate Sidebar Variables - Dark Mode --- */
-    --sidebar-background: 225 30% 12%; /* Darker, slightly less saturated blue */
-    --sidebar-foreground: 210 40% 96%; /* Light text */
+    --sidebar-background: 220 10% 18%; /* Slightly darker Gray for dark mode sidebar */
+    --sidebar-foreground: 0 0% 100%; /* White text */
     --sidebar-primary: var(--primary); /* Use main primary color */
     --sidebar-primary-foreground: var(--primary-foreground);
-    --sidebar-accent: 220 40% 20%; /* Slightly lighter dark blue hover */
-    --sidebar-accent-foreground: 210 40% 98%; /* Light text on hover */
-    --sidebar-border: 220 30% 25%; /* Adjusted dark border */
+    --sidebar-accent: 220 10% 28%; /* Slightly lighter dark gray hover */
+    --sidebar-accent-foreground: 0 0% 100%; /* White text on hover */
+    --sidebar-border: 220 10% 23%; /* Adjusted dark border */
     --sidebar-ring: var(--ring);
   }
 }
@@ -136,7 +136,8 @@
   .text-info-foreground { @apply text-[hsl(var(--info-foreground))]; }
 
   /* Backdrop Blur Utility */
-  .backdrop-blur-10 { /* Custom utility for ~10px blur */
+  .backdrop-blur-10 {
     backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px); /* Safari */
   }
 }

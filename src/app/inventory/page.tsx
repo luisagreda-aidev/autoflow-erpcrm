@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import { useState } from "react";
+import { useState, useRef } from "react"; // Import useRef
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { z } from "zod";
@@ -15,7 +15,7 @@ import {
   CardContent,
   CardFooter,
 } from "@/components/ui/card";
-import { PlusCircle, Search, Filter, X, Check, ChevronDown, Calendar as CalendarIcon, Car } from "lucide-react"; // Import Car icon
+import { PlusCircle, Search, Filter, X, Check, ChevronDown, Calendar as CalendarIcon, Car, Upload, Trash2 } from "lucide-react"; // Import Car, Upload, Trash2 icons
 import Image from "next/image";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -59,17 +59,19 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { cn } from "@/lib/utils";
-import { vehicleSchema, type VehicleInput } from "@/lib/schemas/vehicle"; // Import the schema and type
-import { useToast } from "@/hooks/use-toast"; // Import useToast
+import { vehicleSchema, type VehicleInput } from "@/lib/schemas/vehicle";
+import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
 
 // Define Vehicle interface based on schema for frontend use
-interface Vehicle extends VehicleInput {
+interface Vehicle extends Omit<VehicleInput, 'images'> { // Omit images from schema type
   id: string; // Add an ID for mapping
-  image: string; // Add image URL property
+  images: { file: File; preview: string }[]; // Use an array of image objects
+  imageUrl?: string; // Keep original imageUrl for potential single image use or fallback
 }
+
 
 // Expanded feature list
 const allFeatures = [
@@ -86,11 +88,14 @@ const allFeatures = [
 
 
 export default function InventoryPage() {
-  const { toast } = useToast(); // Initialize toast
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]); // State for vehicles, typed
+  const { toast } = useToast();
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [isAddVehicleOpen, setIsAddVehicleOpen] = useState(false);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
+  const [imagePreviews, setImagePreviews] = useState<Vehicle['images']>([]); // State for image previews
+  const fileInputRef = useRef<HTMLInputElement>(null); // Ref for file input
+
 
   // Initialize react-hook-form
   const form = useForm<VehicleInput>({
@@ -98,20 +103,21 @@ export default function InventoryPage() {
     defaultValues: {
       make: "",
       model: "",
-      year: new Date().getFullYear(), // Default to current year
+      year: new Date().getFullYear(),
       vin: "",
       price: 0,
       mileage: 0,
-      status: "En preparación", // Default status
+      status: "En preparación",
       color: "",
       engine: "",
-      transmission: "Manual", // Default transmission
-      features: [], // Initialize as empty array
+      transmission: "Manual",
+      features: [],
       condition: "",
       documentation: "",
       entryDate: new Date(),
       cost: 0,
-      imageUrl: "", // Default to empty string
+      imageUrl: "",
+      images: [], // Initialize images array
     },
   });
 
@@ -124,37 +130,86 @@ export default function InventoryPage() {
       case "Vendido":
         return "bg-destructive text-destructive-foreground hover:bg-destructive/90";
       case "En preparación":
-        return "bg-info text-info-foreground hover:bg-info/90"; // Added info variant
+        return "bg-info text-info-foreground hover:bg-info/90";
       case "Comprado":
-        return "secondary"; // Default secondary variant
+        return "secondary";
       default:
         return "secondary";
     }
   };
 
+  // Handle image selection
+  const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files) {
+        const newImages = Array.from(files).map(file => ({
+            file,
+            preview: URL.createObjectURL(file)
+        }));
+      // Append new images to existing ones, update form state, and previews
+      const updatedImages = [...imagePreviews, ...newImages];
+      setImagePreviews(updatedImages);
+      form.setValue('images', updatedImages.map(img => img.file), { shouldValidate: true }); // Update form with File objects
+    }
+  };
+
+  // Remove image preview and update form state
+    const removeImage = (index: number) => {
+        const updatedPreviews = imagePreviews.filter((_, i) => i !== index);
+        setImagePreviews(updatedPreviews);
+        form.setValue('images', updatedPreviews.map(img => img.file), { shouldValidate: true });
+
+        // Clean up object URL
+        URL.revokeObjectURL(imagePreviews[index].preview);
+
+        // Reset file input if needed (optional, allows re-selecting the same file if removed)
+        if (fileInputRef.current) {
+            fileInputRef.current.value = "";
+        }
+    };
+
+    // Trigger file input click
+    const triggerFileInput = () => {
+        fileInputRef.current?.click();
+    };
+
+
   // Submit handler
   const onSubmit = (data: VehicleInput) => {
     console.log("New Vehicle Data:", data);
-    // In a real app, you'd send this data to your backend API
-    // For now, let's add it to the local state with a temporary ID and image
+    // In a real app, you'd upload images to storage and save URLs/references
+    // For now, use the generated previews locally
+
     const newVehicle: Vehicle = {
-      ...data,
-      id: `temp-${Date.now()}`, // Temporary ID
-      image: data.imageUrl || 'https://picsum.photos/300/200?grayscale', // Use provided URL or default placeholder
-      year: Number(data.year), // Ensure year is number
-      price: Number(data.price), // Ensure price is number
-      mileage: Number(data.mileage), // Ensure mileage is number
-      cost: Number(data.cost), // Ensure cost is number
-      features: data.features || [], // Ensure features is an array
+      id: `temp-${Date.now()}`,
+      make: data.make,
+      model: data.model,
+      vin: data.vin,
+      color: data.color,
+      engine: data.engine,
+      transmission: data.transmission,
+      condition: data.condition,
+      documentation: data.documentation,
+      status: data.status,
+      year: Number(data.year),
+      price: Number(data.price),
+      mileage: Number(data.mileage),
+      cost: data.cost ? Number(data.cost) : undefined,
+      entryDate: data.entryDate,
+      features: data.features || [],
+      images: imagePreviews, // Use the previews from state
+      imageUrl: data.imageUrl || (imagePreviews.length > 0 ? imagePreviews[0].preview : 'https://picsum.photos/300/200?grayscale'), // Use first preview or placeholder
     };
+
     setVehicles((prev) => [...prev, newVehicle]);
     toast({
       title: "Vehículo Añadido",
       description: `${data.make} ${data.model} ha sido añadido al inventario.`,
-      variant: "default", // Explicitly set variant
+      variant: "default",
     });
-    setIsAddVehicleOpen(false); // Close the modal
-    form.reset(); // Reset the form
+    setIsAddVehicleOpen(false);
+    form.reset();
+    setImagePreviews([]); // Clear previews after submit
   };
 
   const openDetailsModal = (vehicle: Vehicle) => {
@@ -482,17 +537,75 @@ export default function InventoryPage() {
                 </FormItem>
               )}
             />
-            {/* Image URL Field */}
+
+            {/* Image Upload Field */}
+            <FormField
+                  control={form.control}
+                  name="images"
+                  render={() => ( // No need for field props directly here if using state for previews
+                  <FormItem>
+                      <FormLabel>Imágenes del Vehículo</FormLabel>
+                      <FormControl>
+                         {/* Hidden file input */}
+                        <Input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          ref={fileInputRef}
+                          className="hidden"
+                          onChange={handleImageChange}
+                        />
+                      </FormControl>
+                       {/* Image Previews */}
+                        {imagePreviews.length > 0 && (
+                            <div className="mt-2 grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+                                {imagePreviews.map((image, index) => (
+                                    <div key={index} className="relative group aspect-square">
+                                        <Image
+                                            src={image.preview}
+                                            alt={`Preview ${index + 1}`}
+                                            fill
+                                            className="object-cover rounded-md"
+                                            onLoad={() => {
+                                                // Optional: revoke previous object URL if you replace images frequently
+                                                // URL.revokeObjectURL(image.preview);
+                                            }}
+                                        />
+                                        <Button
+                                            type="button"
+                                            variant="destructive"
+                                            size="icon"
+                                            className="absolute top-1 right-1 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                                            onClick={() => removeImage(index)}
+                                        >
+                                            <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Upload Button */}
+                        <Button type="button" variant="outline" onClick={triggerFileInput} className="mt-2">
+                            <Upload className="mr-2 h-4 w-4" /> Subir Imágenes
+                        </Button>
+                      <FormDescription>Sube una o varias imágenes del vehículo.</FormDescription>
+                      <FormMessage />
+                  </FormItem>
+                  )}
+              />
+
+            {/* Optional: Keep single image URL field if needed for fallback or primary image */}
             <FormField
                   control={form.control}
                   name="imageUrl"
                   render={({ field }) => (
                   <FormItem>
-                      <FormLabel>URL de la Imagen</FormLabel>
+                      <FormLabel>URL de Imagen Principal (Opcional)</FormLabel>
                       <FormControl>
                       <Input placeholder="https://ejemplo.com/imagen.jpg" {...field} />
                       </FormControl>
-                      <FormDescription>Opcional. Si no se proporciona, se usará una imagen de ejemplo genérica.</FormDescription>
+                      <FormDescription>Si no subes imágenes, puedes usar esta URL como imagen principal.</FormDescription>
                       <FormMessage />
                   </FormItem>
                   )}
@@ -539,28 +652,27 @@ export default function InventoryPage() {
           </DropdownMenu>
 
           {/* --- Add Vehicle Dialog Trigger --- */}
-          <Dialog open={isAddVehicleOpen} onOpenChange={setIsAddVehicleOpen}>
+          <Dialog open={isAddVehicleOpen} onOpenChange={(open) => { setIsAddVehicleOpen(open); if (!open) { setImagePreviews([]); form.reset(); }}}>
             <DialogTrigger asChild>
               <Button size="sm" className="h-9 gap-1 shrink-0">
                 <PlusCircle className="h-3.5 w-3.5" />
                 <span className="sr-only sm:not-sr-only sm:whitespace-nowrap">Añadir Vehículo</span>
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-3xl max-h-[90vh]">
+            <DialogContent className="sm:max-w-4xl max-h-[90vh]"> {/* Increased width */}
                <DialogHeader>
                  <DialogTitle>Añadir Nuevo Vehículo</DialogTitle>
                  <DialogDescription>
                     Introduce los detalles del vehículo. Los campos marcados con * son obligatorios.
                  </DialogDescription>
                </DialogHeader>
-              <ScrollArea className="max-h-[calc(80vh-160px)] pr-6 -mr-6 pl-0.5"> {/* Adjust height and padding */}
+              <ScrollArea className="max-h-[calc(80vh-160px)] pr-6 -mr-6 pl-0.5">
                  {renderVehicleForm("add-vehicle-form")}
                </ScrollArea>
                <DialogFooter className="mt-4 pt-4 border-t">
                  <DialogClose asChild>
                     <Button variant="outline">Cancelar</Button>
                  </DialogClose>
-                {/* The onClick is handled by the form's onSubmit */}
                 <Button type="submit" form="add-vehicle-form">Guardar Vehículo</Button>
               </DialogFooter>
             </DialogContent>
@@ -575,21 +687,25 @@ export default function InventoryPage() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {vehicles.map((vehicle) => (
             <Card key={vehicle.id} className="overflow-hidden flex flex-col shadow-md hover:shadow-lg transition-shadow duration-200">
-              <CardHeader className="p-0">
+              <CardHeader className="p-0 relative aspect-[3/2] w-full"> {/* Make header relative */}
                 <Image
-                  src={vehicle.image}
+                  src={vehicle.images.length > 0 ? vehicle.images[0].preview : (vehicle.imageUrl || 'https://picsum.photos/400/267?grayscale')}
                   alt={`${vehicle.make} ${vehicle.model}`}
-                  width={400} // Increased size
-                  height={267} // Maintain 3:2 ratio
-                  className="aspect-[3/2] w-full object-cover"
+                  fill // Use fill to cover the container
+                  className="object-cover" // Ensure image covers the area
                   data-ai-hint={`${vehicle.make} ${vehicle.model}`}
+                   sizes="(max-width: 768px) 50vw, (max-width: 1200px) 33vw, 25vw" // Responsive sizes
                   onError={(e) => {
-                    // Fallback if image fails to load
                     (e.target as HTMLImageElement).src = 'https://picsum.photos/400/267?grayscale';
                     (e.target as HTMLImageElement).alt = 'Placeholder Image';
                   }}
-                  priority={false} // Only prioritize above-the-fold images if needed
+                  priority={false}
                 />
+                 {vehicle.images.length > 1 && (
+                    <Badge variant="secondary" className="absolute bottom-2 right-2 text-xs">
+                      {vehicle.images.length} fotos
+                    </Badge>
+                  )}
               </CardHeader>
               <CardContent className="p-4 grid gap-1 flex-grow">
                 <div className="flex items-center justify-between gap-2">
@@ -598,7 +714,7 @@ export default function InventoryPage() {
                   </CardTitle>
                   <Badge
                     className={cn("text-xs shrink-0", getStatusBadgeVariant(vehicle.status))}
-                    variant={"default"} // Use default, color is handled by className
+                    variant={"default"}
                   >
                     {vehicle.status}
                   </Badge>
@@ -612,11 +728,7 @@ export default function InventoryPage() {
                 <p className="text-xs text-muted-foreground mt-auto pt-2">VIN: {vehicle.vin}</p>
               </CardContent>
               <CardFooter className="flex justify-end gap-2 p-4 pt-0 border-t mt-auto">
-                 {/* View Details Button */}
                 <Button variant="outline" size="sm" onClick={() => openDetailsModal(vehicle)}>Ver Detalles</Button>
-                {/* Add Edit/Delete buttons here later */}
-                {/* <Button variant="ghost" size="sm"><Edit className="h-4 w-4 mr-1"/> Editar</Button>
-                <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive"><Trash2 className="h-4 w-4 mr-1"/> Eliminar</Button> */}
               </CardFooter>
             </Card>
           ))}
@@ -625,19 +737,18 @@ export default function InventoryPage() {
         // Empty State Card
         <Card className="col-span-full flex flex-col items-center justify-center py-16 border-dashed border-2 mt-8">
             <CardHeader className="text-center">
-                <Car className="mx-auto h-12 w-12 text-muted-foreground mb-4" /> {/* Replaced CarIcon with Car */}
+                <Car className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
                 <CardTitle className="text-xl">No hay vehículos en el inventario</CardTitle>
                 <CardDescription>Empieza añadiendo tu primer vehículo.</CardDescription>
             </CardHeader>
             <CardContent>
-                {/* Re-use Add Vehicle Dialog Trigger */}
-                <Dialog open={isAddVehicleOpen} onOpenChange={setIsAddVehicleOpen}>
+                <Dialog open={isAddVehicleOpen} onOpenChange={(open) => { setIsAddVehicleOpen(open); if (!open) { setImagePreviews([]); form.reset(); }}}>
                     <DialogTrigger asChild>
                         <Button>
                             <PlusCircle className="mr-2 h-4 w-4" /> Añadir Vehículo
                         </Button>
                     </DialogTrigger>
-                    <DialogContent className="sm:max-w-3xl max-h-[90vh]">
+                    <DialogContent className="sm:max-w-4xl max-h-[90vh]"> {/* Increased width */}
                          <DialogHeader>
                             <DialogTitle>Añadir Nuevo Vehículo</DialogTitle>
                             <DialogDescription>
@@ -661,30 +772,53 @@ export default function InventoryPage() {
 
       {/* View Details Dialog */}
         <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
-             <DialogContent className="sm:max-w-2xl max-h-[90vh]">
+             <DialogContent className="sm:max-w-4xl max-h-[90vh]"> {/* Increased width */}
                  {selectedVehicle && (
                      <>
                         <DialogHeader>
                          <DialogTitle>{selectedVehicle.make} {selectedVehicle.model} ({selectedVehicle.year})</DialogTitle>
                          <DialogDescription>VIN: {selectedVehicle.vin}</DialogDescription>
                       </DialogHeader>
-                      <ScrollArea className="max-h-[calc(80vh-180px)] pr-6 -mr-6 pl-0.5"> {/* Adjusted height */}
+                      <ScrollArea className="max-h-[calc(80vh-180px)] pr-6 -mr-6 pl-0.5">
                          <div className="py-4 grid gap-4">
-                            <div className="relative aspect-[3/2] w-full mb-4 rounded-md overflow-hidden">
-                                <Image
-                                    src={selectedVehicle.image}
-                                    alt={`${selectedVehicle.make} ${selectedVehicle.model}`}
-                                    fill // Use fill for responsive image size
-                                    className="object-cover"
-                                    data-ai-hint={`${selectedVehicle.make} ${selectedVehicle.model} detail view`}
-                                    sizes="(max-width: 640px) 90vw, (max-width: 1024px) 60vw, 500px" // Provide sizes for optimization
-                                    onError={(e) => {
-                                      // Fallback if image fails to load
-                                      (e.target as HTMLImageElement).src = 'https://picsum.photos/600/400?grayscale';
-                                      (e.target as HTMLImageElement).alt = 'Placeholder Image';
-                                    }}
-                                />
-                            </div>
+                            {/* Image Carousel/Grid */}
+                            {selectedVehicle.images.length > 0 && (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 mb-4">
+                                    {selectedVehicle.images.map((image, index) => (
+                                        <div key={index} className="relative aspect-[3/2] w-full rounded-md overflow-hidden">
+                                            <Image
+                                                src={image.preview}
+                                                alt={`${selectedVehicle.make} ${selectedVehicle.model} - Foto ${index + 1}`}
+                                                fill
+                                                className="object-cover"
+                                                 sizes="(max-width: 640px) 90vw, (max-width: 1024px) 45vw, 30vw"
+                                                onError={(e) => {
+                                                    (e.target as HTMLImageElement).src = 'https://picsum.photos/300/200?grayscale';
+                                                    (e.target as HTMLImageElement).alt = 'Placeholder Image';
+                                                }}
+                                            />
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                             {/* Fallback if no uploaded images but imageUrl exists */}
+                             {selectedVehicle.images.length === 0 && selectedVehicle.imageUrl && (
+                                <div className="relative aspect-[3/2] w-full mb-4 rounded-md overflow-hidden">
+                                    <Image
+                                        src={selectedVehicle.imageUrl}
+                                        alt={`${selectedVehicle.make} ${selectedVehicle.model}`}
+                                        fill
+                                        className="object-cover"
+                                        data-ai-hint={`${selectedVehicle.make} ${selectedVehicle.model} detail view`}
+                                        sizes="(max-width: 640px) 90vw, (max-width: 1024px) 60vw, 500px"
+                                        onError={(e) => {
+                                        (e.target as HTMLImageElement).src = 'https://picsum.photos/600/400?grayscale';
+                                        (e.target as HTMLImageElement).alt = 'Placeholder Image';
+                                        }}
+                                    />
+                                </div>
+                            )}
+
 
                             <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
                                 <div><strong>Precio:</strong> {selectedVehicle.price.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}</div>
@@ -744,3 +878,10 @@ const parseNumber = (value: string | undefined | null): number | undefined => {
   const num = parseFloat(value);
   return isNaN(num) ? undefined : num;
 };
+
+// Clean up Object URLs on component unmount
+React.useEffect(() => {
+  return () => {
+    imagePreviews.forEach(image => URL.revokeObjectURL(image.preview));
+  };
+}, [imagePreviews]); // Dependency array ensures cleanup runs if previews change

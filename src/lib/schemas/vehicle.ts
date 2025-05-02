@@ -1,9 +1,15 @@
 import { z } from "zod";
 
+// Define max file size (e.g., 5MB)
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
+// Define allowed image types
+const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+
+
 export const vehicleSchema = z.object({
   make: z.string().min(1, { message: "La marca es obligatoria." }),
   model: z.string().min(1, { message: "El modelo es obligatorio." }),
-  year: z.number().int().min(1900, { message: "Año inválido." }).max(new Date().getFullYear() + 1, { message: "Año inválido." }), // Allow next year for future models
+  year: z.number().int().min(1900, { message: "Año inválido." }).max(new Date().getFullYear() + 1, { message: "Año inválido." }),
   vin: z.string().length(17, { message: "El VIN debe tener 17 caracteres." }).toUpperCase(),
   price: z.number().positive({ message: "El precio debe ser positivo." }),
   mileage: z.number().nonnegative({ message: "El kilometraje no puede ser negativo." }),
@@ -11,12 +17,22 @@ export const vehicleSchema = z.object({
   color: z.string().optional(),
   engine: z.string().optional(),
   transmission: z.enum(["Manual", "Automática"]),
-  features: z.array(z.string()).optional(), // Changed to array of strings
+  features: z.array(z.string()).optional(),
   condition: z.string().optional(),
   documentation: z.string().optional(),
-  entryDate: z.date().default(new Date()), // Automatically set entry date
+  entryDate: z.date().default(new Date()),
   cost: z.number().nonnegative({ message: "El coste no puede ser negativo." }).optional(),
-  imageUrl: z.string().url({ message: "URL de imagen inválida." }).optional().or(z.literal('')), // Allow empty string or valid URL
+  imageUrl: z.string().url({ message: "URL de imagen inválida." }).optional().or(z.literal('')), // Keep for optional single URL
+
+  // Add validation for multiple image uploads
+  images: z.array(
+      z.instanceof(File)
+        .refine((file) => file.size <= MAX_FILE_SIZE, `El tamaño máximo es 5MB.`)
+        .refine(
+          (file) => ACCEPTED_IMAGE_TYPES.includes(file.type),
+          "Solo se aceptan .jpg, .jpeg, .png y .webp."
+        )
+    ).optional().default([]), // Make images optional and default to empty array
 });
 
 export type VehicleInput = z.infer<typeof vehicleSchema>;
