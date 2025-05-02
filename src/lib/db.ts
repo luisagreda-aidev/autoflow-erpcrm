@@ -1,5 +1,6 @@
 // @/lib/db.ts
-'use server';
+// Removed 'use server'; directive as this module exports non-async items (db instance)
+// and functions that can be called by Server Components or other Server Actions.
 
 import Database from 'better-sqlite3';
 import path from 'path';
@@ -234,7 +235,7 @@ export async function deleteVehicle(id: number): Promise<boolean> {
  * NOTE: This function is NOT marked async and is not a Server Action itself.
  * It's intended to be called during process shutdown events.
  */
-function closeDb() { // Removed 'export'
+function closeDb() { // Removed 'export' as it was causing issues with 'use server' previously. It's now used internally by shutdown logic.
   if (db && db.open) {
     db.close();
     console.log("Database connection closed.");
@@ -252,6 +253,8 @@ const shutdown = () => {
   }
 };
 
+// These process listeners are standard Node.js practice for resource cleanup.
+// They are generally safe to keep in a server-side module like this.
 process.on('exit', closeDb); // Close on normal exit
 process.on('SIGINT', shutdown); // Close on Ctrl+C
 process.on('SIGTERM', shutdown); // Close on termination signal
