@@ -16,7 +16,7 @@ const dbPath = path.resolve(process.cwd(), 'autoflow.db');
 
 // Initialize the database connection
 // verbose: console.log helps in debugging SQL queries
-const db = new Database(dbPath, { verbose: console.log });
+export const db = new Database(dbPath, { verbose: console.log }); // Export db instance
 
 // ---- Schema Definition ----
 // Use IF NOT EXISTS to prevent errors on restart
@@ -231,17 +231,28 @@ export async function deleteVehicle(id: number): Promise<boolean> {
 /**
  * Closes the database connection.
  * Call this when the application is shutting down.
+ * NOTE: This function is NOT marked async and is not a Server Action itself.
+ * It's intended to be called during process shutdown events.
  */
-export async function closeDb() { // Made async
-  db.close();
-  console.log("Database connection closed.");
+export function closeDb() {
+  if (db && db.open) {
+    db.close();
+    console.log("Database connection closed.");
+  }
 }
 
-// Ensure the database connection is closed gracefully on exit
-process.on('exit', () => closeDb());
-process.on('SIGINT', () => {
-  closeDb().then(() => process.exit(0));
-});
-process.on('SIGTERM', () => {
-  closeDb().then(() => process.exit(0));
-});
+// Graceful shutdown handling
+let isClosing = false;
+const shutdown = () => {
+  if (!isClosing) {
+    isClosing = true;
+    console.log("Closing database connection due to process exit...");
+    closeDb();
+    process.exit(0);
+  }
+};
+
+process.on('exit', closeDb); // Close on normal exit
+process.on('SIGINT', shutdown); // Close on Ctrl+C
+process.on('SIGTERM', shutdown); // Close on termination signal
+process.on('SIGUSR2', shutdown); // Close on nodemon restart
