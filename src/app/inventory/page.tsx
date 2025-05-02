@@ -121,6 +121,14 @@ export default function InventoryPage() {
     },
   });
 
+  // Clean up Object URLs on component unmount or when imagePreviews changes
+  useEffect(() => {
+    // This function will run when the component unmounts or before the effect runs again
+    return () => {
+      imagePreviews.forEach(image => URL.revokeObjectURL(image.preview));
+    };
+  }, [imagePreviews]); // Dependency array ensures cleanup runs if previews change
+
   const getStatusBadgeVariant = (status: string) => {
     switch (status) {
       case "Disponible":
@@ -142,6 +150,9 @@ export default function InventoryPage() {
   const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (files) {
+        // Revoke existing previews before creating new ones
+        imagePreviews.forEach(image => URL.revokeObjectURL(image.preview));
+
         const newImages = Array.from(files).map(file => ({
             file,
             preview: URL.createObjectURL(file)
@@ -155,12 +166,13 @@ export default function InventoryPage() {
 
   // Remove image preview and update form state
     const removeImage = (index: number) => {
+        const imageToRemove = imagePreviews[index];
         const updatedPreviews = imagePreviews.filter((_, i) => i !== index);
         setImagePreviews(updatedPreviews);
         form.setValue('images', updatedPreviews.map(img => img.file), { shouldValidate: true });
 
         // Clean up object URL
-        URL.revokeObjectURL(imagePreviews[index].preview);
+        URL.revokeObjectURL(imageToRemove.preview);
 
         // Reset file input if needed (optional, allows re-selecting the same file if removed)
         if (fileInputRef.current) {
@@ -180,6 +192,10 @@ export default function InventoryPage() {
     // In a real app, you'd upload images to storage and save URLs/references
     // For now, use the generated previews locally
 
+    // Create new image objects for the vehicle state, ensuring we don't mutate the preview state directly
+     const vehicleImages = imagePreviews.map(img => ({ file: img.file, preview: img.preview }));
+
+
     const newVehicle: Vehicle = {
       id: `temp-${Date.now()}`,
       make: data.make,
@@ -197,19 +213,20 @@ export default function InventoryPage() {
       cost: data.cost ? Number(data.cost) : undefined,
       entryDate: data.entryDate,
       features: data.features || [],
-      images: imagePreviews, // Use the previews from state
-      imageUrl: data.imageUrl || (imagePreviews.length > 0 ? imagePreviews[0].preview : 'https://picsum.photos/300/200?grayscale'), // Use first preview or placeholder
+      images: vehicleImages, // Use the new image objects
+      imageUrl: data.imageUrl || (vehicleImages.length > 0 ? vehicleImages[0].preview : 'https://picsum.photos/300/200?grayscale'), // Use first preview or placeholder
     };
 
     setVehicles((prev) => [...prev, newVehicle]);
     toast({
       title: "Vehículo Añadido",
       description: `${data.make} ${data.model} ha sido añadido al inventario.`,
-      variant: "default",
+      variant: "default", // Use default or success variant
     });
     setIsAddVehicleOpen(false);
     form.reset();
-    setImagePreviews([]); // Clear previews after submit
+    setImagePreviews([]); // Clear previews state AFTER successful submission
+    // Note: Cleanup of these Object URLs will happen in the useEffect hook
   };
 
   const openDetailsModal = (vehicle: Vehicle) => {
@@ -699,7 +716,7 @@ export default function InventoryPage() {
                     (e.target as HTMLImageElement).src = 'https://picsum.photos/400/267?grayscale';
                     (e.target as HTMLImageElement).alt = 'Placeholder Image';
                   }}
-                  priority={false}
+                  priority={false} // Consider setting priority based on position
                 />
                  {vehicle.images.length > 1 && (
                     <Badge variant="secondary" className="absolute bottom-2 right-2 text-xs">
@@ -714,7 +731,7 @@ export default function InventoryPage() {
                   </CardTitle>
                   <Badge
                     className={cn("text-xs shrink-0", getStatusBadgeVariant(vehicle.status))}
-                    variant={"default"}
+                    variant={"default"} // Keep base variant, colors applied by cn
                   >
                     {vehicle.status}
                   </Badge>
@@ -878,10 +895,3 @@ const parseNumber = (value: string | undefined | null): number | undefined => {
   const num = parseFloat(value);
   return isNaN(num) ? undefined : num;
 };
-
-// Clean up Object URLs on component unmount
-useEffect(() => {
-  return () => {
-    imagePreviews.forEach(image => URL.revokeObjectURL(image.preview));
-  };
-}, [imagePreviews]); // Dependency array ensures cleanup runs if previews change
