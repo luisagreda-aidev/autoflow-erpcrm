@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import { useState, useRef } from "react"; // Import useRef
+import { useState, useRef, useEffect } from "react"; // Import useEffect
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { z } from "zod";
@@ -880,7 +880,7 @@ const parseNumber = (value: string | undefined | null): number | undefined => {
 };
 
 // Clean up Object URLs on component unmount
-React.useEffect(() => {
+useEffect(() => {
   return () => {
     imagePreviews.forEach(image => URL.revokeObjectURL(image.preview));
   };
