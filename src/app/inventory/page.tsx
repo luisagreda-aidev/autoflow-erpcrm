@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import { useState, useRef, useEffect } from "react"; // Import useEffect
+import { useState, useRef, useEffect, useTransition } from "react"; // Import useEffect, useTransition
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { z } from "zod";
@@ -15,7 +15,7 @@ import {
   CardContent,
   CardFooter,
 } from "@/components/ui/card";
-import { PlusCircle, Search, Filter, X, Check, ChevronDown, Calendar as CalendarIcon, Car, Upload, Trash2 } from "lucide-react"; // Import Car, Upload, Trash2 icons
+import { PlusCircle, Search, Filter, X, Check, ChevronDown, Calendar as CalendarIcon, Car, Upload, Trash2, Loader2 } from "lucide-react"; // Import Car, Upload, Trash2, Loader2 icons
 import Image from "next/image";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -63,13 +63,14 @@ import { vehicleSchema, type VehicleInput } from "@/lib/schemas/vehicle";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
+import { addVehicle, getAllVehicles, type Vehicle as DbVehicle } from "@/lib/db"; // Import DB functions
 
-
-// Define Vehicle interface based on schema for frontend use
-interface Vehicle extends Omit<VehicleInput, 'images'> { // Omit images from schema type
-  id: string; // Add an ID for mapping
-  images: { file: File; preview: string }[]; // Use an array of image objects
-  imageUrl?: string; // Keep original imageUrl for potential single image use or fallback
+// Define Vehicle interface for frontend use, extending DbVehicle slightly
+interface DisplayVehicle extends Omit<DbVehicle, 'features' | 'images'> {
+  features: string[]; // Parsed features
+  images: string[]; // Parsed image URLs/Data URIs
+  // Add local preview state if needed during upload, but not part of DbVehicle
+  localImagePreviews?: { file: File; preview: string }[];
 }
 
 
@@ -89,12 +90,39 @@ const allFeatures = [
 
 export default function InventoryPage() {
   const { toast } = useToast();
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [vehicles, setVehicles] = useState<DisplayVehicle[]>([]);
   const [isAddVehicleOpen, setIsAddVehicleOpen] = useState(false);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
-  const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
-  const [imagePreviews, setImagePreviews] = useState<Vehicle['images']>([]); // State for image previews
+  const [selectedVehicle, setSelectedVehicle] = useState<DisplayVehicle | null>(null);
+  const [imagePreviews, setImagePreviews] = useState<{ file: File; preview: string }[]>([]); // State for image previews during upload
   const fileInputRef = useRef<HTMLInputElement>(null); // Ref for file input
+  const [isPending, startTransition] = useTransition(); // For server action loading state
+  const [isLoading, setIsLoading] = useState(true); // Loading state for initial data fetch
+
+  // Fetch initial vehicles on component mount
+  useEffect(() => {
+    const fetchVehicles = async () => {
+      setIsLoading(true);
+      try {
+        const dbVehicles = await getAllVehicles();
+        const displayVehicles = dbVehicles.map(v => ({
+          ...v,
+          features: v.features ? JSON.parse(v.features) : [],
+          images: v.images ? JSON.parse(v.images) : [],
+        }));
+        setVehicles(displayVehicles);
+      } catch (error: any) {
+        toast({
+          title: "Error al cargar vehículos",
+          description: error.message || "No se pudieron obtener los datos del inventario.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchVehicles();
+  }, [toast]); // Added toast to dependencies
 
 
   // Initialize react-hook-form
@@ -115,9 +143,9 @@ export default function InventoryPage() {
       condition: "",
       documentation: "",
       entryDate: new Date(),
-      cost: 0,
+      cost: undefined, // Make cost optional
       imageUrl: "",
-      images: [], // Initialize images array
+      images: [], // Initialize images array (File objects for validation)
     },
   });
 
@@ -140,9 +168,9 @@ export default function InventoryPage() {
       case "En preparación":
         return "bg-info text-info-foreground hover:bg-info/90";
       case "Comprado":
-        return "secondary";
+        return "bg-secondary text-secondary-foreground hover:bg-secondary/80"; // Use secondary bg directly
       default:
-        return "secondary";
+        return "bg-secondary text-secondary-foreground hover:bg-secondary/80"; // Use secondary bg directly
     }
   };
 
@@ -150,26 +178,38 @@ export default function InventoryPage() {
   const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (files) {
-        // Revoke existing previews before creating new ones
-        imagePreviews.forEach(image => URL.revokeObjectURL(image.preview));
+        const currentPreviews = form.getValues('images') || []; // Get current File array
+        const newFiles = Array.from(files);
 
-        const newImages = Array.from(files).map(file => ({
+        // Create new preview objects
+        const newPreviews = newFiles.map(file => ({
             file,
             preview: URL.createObjectURL(file)
         }));
-      // Append new images to existing ones, update form state, and previews
-      const updatedImages = [...imagePreviews, ...newImages];
-      setImagePreviews(updatedImages);
-      form.setValue('images', updatedImages.map(img => img.file), { shouldValidate: true }); // Update form with File objects
+
+        // Combine existing files and new files, update form state, and previews
+        const updatedFiles = [...currentPreviews, ...newFiles];
+        const updatedImagePreviewState = [...imagePreviews, ...newPreviews];
+
+        setImagePreviews(updatedImagePreviewState); // Update local preview state
+        form.setValue('images', updatedFiles, { shouldValidate: true }); // Update form with File objects
+
+        // Important: It's generally better *not* to revoke URLs immediately after creating them
+        // if they are still being used in the UI (like in previews).
+        // The useEffect cleanup hook will handle revocation when the component unmounts
+        // or when the `imagePreviews` state changes (e.g., when removing an image).
     }
-  };
+};
+
 
   // Remove image preview and update form state
     const removeImage = (index: number) => {
         const imageToRemove = imagePreviews[index];
         const updatedPreviews = imagePreviews.filter((_, i) => i !== index);
+        const updatedFiles = form.getValues('images')?.filter((_, i) => i !== index) || [];
+
         setImagePreviews(updatedPreviews);
-        form.setValue('images', updatedPreviews.map(img => img.file), { shouldValidate: true });
+        form.setValue('images', updatedFiles, { shouldValidate: true });
 
         // Clean up object URL
         URL.revokeObjectURL(imageToRemove.preview);
@@ -186,50 +226,90 @@ export default function InventoryPage() {
     };
 
 
-  // Submit handler
+  // Submit handler using server action
   const onSubmit = (data: VehicleInput) => {
-    console.log("New Vehicle Data:", data);
-    // In a real app, you'd upload images to storage and save URLs/references
-    // For now, use the generated previews locally
+    startTransition(async () => {
+      try {
+        // --- Image Upload Logic Placeholder ---
+        // In a real app, upload files in `data.images` to cloud storage (e.g., Firebase Storage, S3)
+        // and get back an array of URLs.
+        // For now, we'll simulate this by using the data URIs from previews or just placeholders.
+        // THIS IS NOT PRODUCTION READY for image handling.
+        const uploadedImageUrls = imagePreviews.map(img => img.preview); // Using blob URLs as placeholders
+        // const uploadedImageUrls = await uploadFilesToStorage(data.images); // Example real function
 
-    // Create new image objects for the vehicle state, ensuring we don't mutate the preview state directly
-     const vehicleImages = imagePreviews.map(img => ({ file: img.file, preview: img.preview }));
+        const vehicleDataForDb: Omit<DbVehicle, 'id' | 'createdAt' | 'updatedAt'> = {
+          make: data.make,
+          model: data.model,
+          year: Number(data.year),
+          vin: data.vin,
+          price: Number(data.price),
+          mileage: Number(data.mileage),
+          status: data.status,
+          color: data.color || null,
+          engine: data.engine || null,
+          transmission: data.transmission,
+          features: JSON.stringify(data.features || []), // Store features as JSON string
+          condition: data.condition || null,
+          documentation: data.documentation || null,
+          entryDate: data.entryDate.toISOString(), // Store date as ISO string
+          cost: data.cost ? Number(data.cost) : null, // Handle optional cost
+          imageUrl: data.imageUrl || (uploadedImageUrls.length > 0 ? uploadedImageUrls[0] : null), // Use first uploaded image URL or provided URL
+          images: JSON.stringify(uploadedImageUrls), // Store image URLs as JSON string
+        };
+
+        const newVehicleId = await addVehicle(vehicleDataForDb);
+
+        // OPTION 1: Optimistic Update (faster UI feedback)
+        // Create the display vehicle optimistically based on submitted data
+         const newDisplayVehicle: DisplayVehicle = {
+          id: newVehicleId, // Use the returned ID
+          ...vehicleDataForDb,
+           entryDate: data.entryDate.toISOString(), // Ensure date is string
+           cost: vehicleDataForDb.cost, // Ensure cost is number or null
+           price: vehicleDataForDb.price,
+           mileage: vehicleDataForDb.mileage,
+           year: vehicleDataForDb.year,
+           features: data.features || [], // Use parsed array for display
+           images: uploadedImageUrls, // Use parsed array for display
+           // Add createdAt/updatedAt placeholder if needed, or fetch the full record
+           createdAt: new Date().toISOString(),
+           updatedAt: new Date().toISOString(),
+        };
+        setVehicles((prev) => [newDisplayVehicle, ...prev]);
 
 
-    const newVehicle: Vehicle = {
-      id: `temp-${Date.now()}`,
-      make: data.make,
-      model: data.model,
-      vin: data.vin,
-      color: data.color,
-      engine: data.engine,
-      transmission: data.transmission,
-      condition: data.condition,
-      documentation: data.documentation,
-      status: data.status,
-      year: Number(data.year),
-      price: Number(data.price),
-      mileage: Number(data.mileage),
-      cost: data.cost ? Number(data.cost) : undefined,
-      entryDate: data.entryDate,
-      features: data.features || [],
-      images: vehicleImages, // Use the new image objects
-      imageUrl: data.imageUrl || (vehicleImages.length > 0 ? vehicleImages[0].preview : 'https://picsum.photos/300/200?grayscale'), // Use first preview or placeholder
-    };
+        // OPTION 2: Refetch (simpler, slightly slower UI)
+        // const updatedVehicles = await getAllVehicles();
+        // const displayVehicles = updatedVehicles.map(v => ({
+        //   ...v,
+        //   features: v.features ? JSON.parse(v.features) : [],
+        //   images: v.images ? JSON.parse(v.images) : [],
+        // }));
+        // setVehicles(displayVehicles);
 
-    setVehicles((prev) => [...prev, newVehicle]);
-    toast({
-      title: "Vehículo Añadido",
-      description: `${data.make} ${data.model} ha sido añadido al inventario.`,
-      variant: "default", // Use default or success variant
+        toast({
+          title: "Vehículo Añadido",
+          description: `${data.make} ${data.model} ha sido añadido al inventario.`,
+          variant: "default",
+        });
+        setIsAddVehicleOpen(false);
+        form.reset();
+        // Clean up previews after successful submission
+        imagePreviews.forEach(img => URL.revokeObjectURL(img.preview));
+        setImagePreviews([]);
+      } catch (error: any) {
+        console.error("Error adding vehicle:", error);
+        toast({
+          title: "Error al añadir vehículo",
+          description: error.message || "No se pudo guardar el vehículo.",
+          variant: "destructive",
+        });
+      }
     });
-    setIsAddVehicleOpen(false);
-    form.reset();
-    setImagePreviews([]); // Clear previews state AFTER successful submission
-    // Note: Cleanup of these Object URLs will happen in the useEffect hook
   };
 
-  const openDetailsModal = (vehicle: Vehicle) => {
+  const openDetailsModal = (vehicle: DisplayVehicle) => {
     setSelectedVehicle(vehicle);
     setIsDetailsOpen(true);
   }
@@ -272,7 +352,7 @@ export default function InventoryPage() {
               <FormItem>
                 <FormLabel>Año *</FormLabel>
                 <FormControl>
-                    <Input type="number" placeholder="Ej. 2023" {...field} onChange={e => field.onChange(parseInt(e.target.value, 10) || 0)} />
+                    <Input type="number" placeholder="Ej. 2023" {...field} onChange={e => field.onChange(parseInt(e.target.value, 10) || new Date().getFullYear())} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -315,7 +395,7 @@ export default function InventoryPage() {
                     <FormItem>
                         <FormLabel>Kilometraje (km) *</FormLabel>
                         <FormControl>
-                        <Input type="number" placeholder="Ej. 50000" {...field} onChange={e => field.onChange(parseInt(e.target.value, 10) || 0)}/>
+                        <Input type="number" placeholder="Ej. 50000" {...field} onChange={e => field.onChange(parseInt(e.target.value, 10) >= 0 ? parseInt(e.target.value, 10) : 0)}/>
                         </FormControl>
                         <FormMessage />
                     </FormItem>
@@ -370,7 +450,7 @@ export default function InventoryPage() {
                 <FormItem>
                     <FormLabel>Precio de Venta (€) *</FormLabel>
                     <FormControl>
-                        <Input type="number" step="0.01" placeholder="Ej. 15000" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} />
+                        <Input type="number" step="0.01" placeholder="Ej. 15000" {...field} onChange={e => field.onChange(parseFloat(e.target.value) > 0 ? parseFloat(e.target.value) : 0)} />
                     </FormControl>
                     <FormMessage />
                 </FormItem>
@@ -383,7 +463,7 @@ export default function InventoryPage() {
                 <FormItem>
                     <FormLabel>Coste Adquisición (€)</FormLabel>
                     <FormControl>
-                        <Input type="number" step="0.01" placeholder="Ej. 12000" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} />
+                        <Input type="number" step="0.01" placeholder="Ej. 12000" {...field} onChange={e => field.onChange(parseFloat(e.target.value) >= 0 ? parseFloat(e.target.value) : undefined)} />
                     </FormControl>
                     <FormMessage />
                 </FormItem>
@@ -531,6 +611,7 @@ export default function InventoryPage() {
                       placeholder="Describe el estado general, posibles desperfectos, historial de mantenimiento..."
                       className="resize-y min-h-[60px]"
                       {...field}
+                      value={field.value ?? ""} // Ensure value is not null/undefined
                     />
                   </FormControl>
                   <FormMessage />
@@ -548,6 +629,7 @@ export default function InventoryPage() {
                       placeholder="Detalles sobre ITV, libro de mantenimiento, facturas, número de propietarios..."
                       className="resize-y min-h-[60px]"
                       {...field}
+                      value={field.value ?? ""} // Ensure value is not null/undefined
                     />
                   </FormControl>
                   <FormMessage />
@@ -571,6 +653,7 @@ export default function InventoryPage() {
                           ref={fileInputRef}
                           className="hidden"
                           onChange={handleImageChange}
+                          disabled={isPending} // Disable during submission
                         />
                       </FormControl>
                        {/* Image Previews */}
@@ -579,21 +662,20 @@ export default function InventoryPage() {
                                 {imagePreviews.map((image, index) => (
                                     <div key={index} className="relative group aspect-square">
                                         <Image
-                                            src={image.preview}
+                                            src={image.preview} // Use local blob URL for preview
                                             alt={`Preview ${index + 1}`}
                                             fill
                                             className="object-cover rounded-md"
-                                            onLoad={() => {
-                                                // Optional: revoke previous object URL if you replace images frequently
-                                                // URL.revokeObjectURL(image.preview);
-                                            }}
+                                            sizes="(max-width: 768px) 30vw, (max-width: 1024px) 20vw, 15vw" // Adjust sizes as needed
+                                            // No need for onLoad revoke here, handled by useEffect
                                         />
                                         <Button
                                             type="button"
                                             variant="destructive"
                                             size="icon"
-                                            className="absolute top-1 right-1 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                                            className="absolute top-1 right-1 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity z-10"
                                             onClick={() => removeImage(index)}
+                                            disabled={isPending} // Disable during submission
                                         >
                                             <Trash2 className="h-4 w-4" />
                                         </Button>
@@ -603,11 +685,11 @@ export default function InventoryPage() {
                         )}
 
                         {/* Upload Button */}
-                        <Button type="button" variant="outline" onClick={triggerFileInput} className="mt-2">
+                        <Button type="button" variant="outline" onClick={triggerFileInput} className="mt-2" disabled={isPending}>
                             <Upload className="mr-2 h-4 w-4" /> Subir Imágenes
                         </Button>
-                      <FormDescription>Sube una o varias imágenes del vehículo.</FormDescription>
-                      <FormMessage />
+                      <FormDescription>Sube una o varias imágenes del vehículo (máx. 5MB por imagen).</FormDescription>
+                      <FormMessage /> {/* Displays validation errors for images */}
                   </FormItem>
                   )}
               />
@@ -620,7 +702,7 @@ export default function InventoryPage() {
                   <FormItem>
                       <FormLabel>URL de Imagen Principal (Opcional)</FormLabel>
                       <FormControl>
-                      <Input placeholder="https://ejemplo.com/imagen.jpg" {...field} />
+                      <Input placeholder="https://ejemplo.com/imagen.jpg" {...field} value={field.value ?? ""} disabled={isPending}/>
                       </FormControl>
                       <FormDescription>Si no subes imágenes, puedes usar esta URL como imagen principal.</FormDescription>
                       <FormMessage />
@@ -669,7 +751,15 @@ export default function InventoryPage() {
           </DropdownMenu>
 
           {/* --- Add Vehicle Dialog Trigger --- */}
-          <Dialog open={isAddVehicleOpen} onOpenChange={(open) => { setIsAddVehicleOpen(open); if (!open) { setImagePreviews([]); form.reset(); }}}>
+           <Dialog open={isAddVehicleOpen} onOpenChange={(open) => {
+                setIsAddVehicleOpen(open);
+                if (!open) {
+                     // Clean up previews when closing dialog if not submitted
+                    imagePreviews.forEach(img => URL.revokeObjectURL(img.preview));
+                    setImagePreviews([]);
+                    form.reset(); // Reset form state
+                }
+            }}>
             <DialogTrigger asChild>
               <Button size="sm" className="h-9 gap-1 shrink-0">
                 <PlusCircle className="h-3.5 w-3.5" />
@@ -688,9 +778,19 @@ export default function InventoryPage() {
                </ScrollArea>
                <DialogFooter className="mt-4 pt-4 border-t">
                  <DialogClose asChild>
-                    <Button variant="outline">Cancelar</Button>
+                    <Button variant="outline" disabled={isPending}>Cancelar</Button>
                  </DialogClose>
-                <Button type="submit" form="add-vehicle-form">Guardar Vehículo</Button>
+                {/* Submit button triggers form submission */}
+                <Button type="submit" form="add-vehicle-form" disabled={isPending}>
+                    {isPending ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Guardando...
+                      </>
+                    ) : (
+                      "Guardar Vehículo"
+                    )}
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -699,26 +799,36 @@ export default function InventoryPage() {
         </div>
       </div>
 
-      {/* Vehicle Grid */}
-      {vehicles.length > 0 ? (
+      {/* Loading State */}
+      {isLoading && (
+          <div className="flex justify-center items-center py-16">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              <span className="ml-3 text-muted-foreground">Cargando vehículos...</span>
+          </div>
+      )}
+
+
+      {/* Vehicle Grid or Empty State */}
+      {!isLoading && vehicles.length > 0 ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {vehicles.map((vehicle) => (
             <Card key={vehicle.id} className="overflow-hidden flex flex-col shadow-md hover:shadow-lg transition-shadow duration-200">
               <CardHeader className="p-0 relative aspect-[3/2] w-full"> {/* Make header relative */}
-                <Image
-                  src={vehicle.images.length > 0 ? vehicle.images[0].preview : (vehicle.imageUrl || 'https://picsum.photos/400/267?grayscale')}
-                  alt={`${vehicle.make} ${vehicle.model}`}
-                  fill // Use fill to cover the container
-                  className="object-cover" // Ensure image covers the area
-                  data-ai-hint={`${vehicle.make} ${vehicle.model}`}
-                   sizes="(max-width: 768px) 50vw, (max-width: 1200px) 33vw, 25vw" // Responsive sizes
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src = 'https://picsum.photos/400/267?grayscale';
-                    (e.target as HTMLImageElement).alt = 'Placeholder Image';
-                  }}
-                  priority={false} // Consider setting priority based on position
+                 {/* Use first image from images array, then imageUrl, then placeholder */}
+                 <Image
+                    src={vehicle.images && vehicle.images.length > 0 ? vehicle.images[0] : (vehicle.imageUrl || 'https://picsum.photos/400/267?grayscale&blur=1')}
+                    alt={`${vehicle.make} ${vehicle.model}`}
+                    fill // Use fill to cover the container
+                    className="object-cover" // Ensure image covers the area
+                    data-ai-hint={`${vehicle.make} ${vehicle.model} car dealership`}
+                    sizes="(max-width: 768px) 50vw, (max-width: 1200px) 33vw, 25vw" // Responsive sizes
+                    onError={(e) => {
+                        (e.target as HTMLImageElement).src = 'https://picsum.photos/400/267?grayscale&blur=1';
+                        (e.target as HTMLImageElement).alt = 'Placeholder Image';
+                    }}
+                    priority={false} // Consider setting priority based on position
                 />
-                 {vehicle.images.length > 1 && (
+                 {vehicle.images && vehicle.images.length > 1 && (
                     <Badge variant="secondary" className="absolute bottom-2 right-2 text-xs">
                       {vehicle.images.length} fotos
                     </Badge>
@@ -731,7 +841,6 @@ export default function InventoryPage() {
                   </CardTitle>
                   <Badge
                     className={cn("text-xs shrink-0", getStatusBadgeVariant(vehicle.status))}
-                    variant={"default"} // Keep base variant, colors applied by cn
                   >
                     {vehicle.status}
                   </Badge>
@@ -742,15 +851,17 @@ export default function InventoryPage() {
                 <p className="font-semibold text-lg mt-1">
                   {vehicle.price.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
                 </p>
-                <p className="text-xs text-muted-foreground mt-auto pt-2">VIN: {vehicle.vin}</p>
+                <p className="text-xs text-muted-foreground mt-auto pt-2 truncate" title={`VIN: ${vehicle.vin}`}>VIN: {vehicle.vin}</p>
               </CardContent>
               <CardFooter className="flex justify-end gap-2 p-4 pt-0 border-t mt-auto">
                 <Button variant="outline" size="sm" onClick={() => openDetailsModal(vehicle)}>Ver Detalles</Button>
+                 {/* Placeholder for Edit/Delete */}
+                 {/* <Button variant="ghost" size="sm">Editar</Button> */}
               </CardFooter>
             </Card>
           ))}
         </div>
-      ) : (
+      ) : ( !isLoading && // Only show empty state if not loading
         // Empty State Card
         <Card className="col-span-full flex flex-col items-center justify-center py-16 border-dashed border-2 mt-8">
             <CardHeader className="text-center">
@@ -759,7 +870,14 @@ export default function InventoryPage() {
                 <CardDescription>Empieza añadiendo tu primer vehículo.</CardDescription>
             </CardHeader>
             <CardContent>
-                <Dialog open={isAddVehicleOpen} onOpenChange={(open) => { setIsAddVehicleOpen(open); if (!open) { setImagePreviews([]); form.reset(); }}}>
+                <Dialog open={isAddVehicleOpen} onOpenChange={(open) => {
+                     setIsAddVehicleOpen(open);
+                     if (!open) {
+                         imagePreviews.forEach(img => URL.revokeObjectURL(img.preview));
+                         setImagePreviews([]);
+                         form.reset();
+                     }
+                 }}>
                     <DialogTrigger asChild>
                         <Button>
                             <PlusCircle className="mr-2 h-4 w-4" /> Añadir Vehículo
@@ -777,9 +895,18 @@ export default function InventoryPage() {
                         </ScrollArea>
                         <DialogFooter className="mt-4 pt-4 border-t">
                            <DialogClose asChild>
-                              <Button variant="outline">Cancelar</Button>
+                              <Button variant="outline" disabled={isPending}>Cancelar</Button>
                             </DialogClose>
-                            <Button type="submit" form="add-vehicle-form-empty">Guardar Vehículo</Button>
+                            <Button type="submit" form="add-vehicle-form-empty" disabled={isPending}>
+                               {isPending ? (
+                                  <>
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    Guardando...
+                                  </>
+                                ) : (
+                                  "Guardar Vehículo"
+                                )}
+                           </Button>
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>
@@ -799,18 +926,18 @@ export default function InventoryPage() {
                       <ScrollArea className="max-h-[calc(80vh-180px)] pr-6 -mr-6 pl-0.5">
                          <div className="py-4 grid gap-4">
                             {/* Image Carousel/Grid */}
-                            {selectedVehicle.images.length > 0 && (
+                            {selectedVehicle.images && selectedVehicle.images.length > 0 && (
                                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 mb-4">
-                                    {selectedVehicle.images.map((image, index) => (
+                                    {selectedVehicle.images.map((imageUrl, index) => (
                                         <div key={index} className="relative aspect-[3/2] w-full rounded-md overflow-hidden">
                                             <Image
-                                                src={image.preview}
+                                                src={imageUrl} // Use the stored URL
                                                 alt={`${selectedVehicle.make} ${selectedVehicle.model} - Foto ${index + 1}`}
                                                 fill
                                                 className="object-cover"
                                                  sizes="(max-width: 640px) 90vw, (max-width: 1024px) 45vw, 30vw"
                                                 onError={(e) => {
-                                                    (e.target as HTMLImageElement).src = 'https://picsum.photos/300/200?grayscale';
+                                                    (e.target as HTMLImageElement).src = 'https://picsum.photos/300/200?grayscale&blur=1';
                                                     (e.target as HTMLImageElement).alt = 'Placeholder Image';
                                                 }}
                                             />
@@ -818,8 +945,8 @@ export default function InventoryPage() {
                                     ))}
                                 </div>
                             )}
-                             {/* Fallback if no uploaded images but imageUrl exists */}
-                             {selectedVehicle.images.length === 0 && selectedVehicle.imageUrl && (
+                             {/* Fallback if no uploaded images array but imageUrl exists */}
+                             {(!selectedVehicle.images || selectedVehicle.images.length === 0) && selectedVehicle.imageUrl && (
                                 <div className="relative aspect-[3/2] w-full mb-4 rounded-md overflow-hidden">
                                     <Image
                                         src={selectedVehicle.imageUrl}
@@ -829,8 +956,8 @@ export default function InventoryPage() {
                                         data-ai-hint={`${selectedVehicle.make} ${selectedVehicle.model} detail view`}
                                         sizes="(max-width: 640px) 90vw, (max-width: 1024px) 60vw, 500px"
                                         onError={(e) => {
-                                        (e.target as HTMLImageElement).src = 'https://picsum.photos/600/400?grayscale';
-                                        (e.target as HTMLImageElement).alt = 'Placeholder Image';
+                                            (e.target as HTMLImageElement).src = 'https://picsum.photos/600/400?grayscale&blur=1';
+                                            (e.target as HTMLImageElement).alt = 'Placeholder Image';
                                         }}
                                     />
                                 </div>
@@ -841,7 +968,7 @@ export default function InventoryPage() {
                                 <div><strong>Precio:</strong> {selectedVehicle.price.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}</div>
                                 <div><strong>Kilometraje:</strong> {selectedVehicle.mileage.toLocaleString()} km</div>
                                 <div><strong>Color:</strong> {selectedVehicle.color || 'N/D'}</div>
-                                <div><strong>Estado:</strong> <Badge className={cn("text-xs ml-1", getStatusBadgeVariant(selectedVehicle.status))} variant={"default"}>{selectedVehicle.status}</Badge></div>
+                                <div><strong>Estado:</strong> <Badge className={cn("text-xs ml-1", getStatusBadgeVariant(selectedVehicle.status))}>{selectedVehicle.status}</Badge></div>
                                 <div><strong>Motor:</strong> {selectedVehicle.engine || 'N/D'}</div>
                                 <div><strong>Transmisión:</strong> {selectedVehicle.transmission}</div>
                                 <div><strong>Coste:</strong> {selectedVehicle.cost ? selectedVehicle.cost.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' }) : 'N/D'}</div>
@@ -888,6 +1015,7 @@ export default function InventoryPage() {
 }
 
 // Helper function to ensure number parsing handles empty strings or invalid input gracefully
+// Not strictly needed anymore with controlled components and zod parsing, but can be kept if desired
 const parseNumber = (value: string | undefined | null): number | undefined => {
   if (value === null || value === undefined || value.trim() === "") {
     return undefined;
@@ -895,3 +1023,13 @@ const parseNumber = (value: string | undefined | null): number | undefined => {
   const num = parseFloat(value);
   return isNaN(num) ? undefined : num;
 };
+
+// Placeholder for actual image upload function
+// async function uploadFilesToStorage(files: File[]): Promise<string[]> {
+//     console.log("Simulating upload for files:", files.map(f => f.name));
+//     // Replace with actual upload logic (e.g., Firebase Storage, S3)
+//     // For demonstration, return mock URLs after a delay
+//     await new Promise(resolve => setTimeout(resolve, 1500));
+//     return files.map((file, index) => `https://mockstorage.com/uploads/${Date.now()}-${index}-${file.name}`);
+// }
+```

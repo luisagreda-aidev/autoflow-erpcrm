@@ -17,14 +17,14 @@ export const vehicleSchema = z.object({
   color: z.string().optional(),
   engine: z.string().optional(),
   transmission: z.enum(["Manual", "Automática"]),
-  features: z.array(z.string()).optional(),
+  features: z.array(z.string()).optional().default([]), // Keep features optional, default empty
   condition: z.string().optional(),
   documentation: z.string().optional(),
   entryDate: z.date().default(new Date()),
-  cost: z.number().nonnegative({ message: "El coste no puede ser negativo." }).optional(),
+  cost: z.number().nonnegative({ message: "El coste no puede ser negativo." }).optional().nullable(), // Make cost optional and nullable
   imageUrl: z.string().url({ message: "URL de imagen inválida." }).optional().or(z.literal('')), // Keep for optional single URL
 
-  // Add validation for multiple image uploads
+  // Update validation for multiple image uploads (File objects for client-side)
   images: z.array(
       z.instanceof(File)
         .refine((file) => file.size <= MAX_FILE_SIZE, `El tamaño máximo es 5MB.`)
@@ -32,7 +32,8 @@ export const vehicleSchema = z.object({
           (file) => ACCEPTED_IMAGE_TYPES.includes(file.type),
           "Solo se aceptan .jpg, .jpeg, .png y .webp."
         )
-    ).optional().default([]), // Make images optional and default to empty array
+    ).optional().default([]), // Make images optional and default to empty array for the form
 });
 
 export type VehicleInput = z.infer<typeof vehicleSchema>;
+```
