@@ -9,7 +9,7 @@ import { format } from "date-fns"; // Import format
 import { es } from "date-fns/locale"; // Import Spanish locale for date formatting
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
-import { PlusCircle, Search, Filter, Loader2, UserRound, Mail, Phone, Info } from "lucide-react"; // Import necessary icons
+import { PlusCircle, Search, Filter, Loader2, UserRound, Mail, Phone, Info, Trash2, AlertTriangle } from "lucide-react"; // Import necessary icons
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -21,6 +21,17 @@ import {
   DialogTrigger,
   DialogClose
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"; // Import Alert Dialog
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -50,7 +61,7 @@ import { cn } from "@/lib/utils";
 import { leadSchema, type LeadInput } from "@/lib/schemas/lead"; // Import lead schema
 import { useToast } from "@/hooks/use-toast";
 // Import Server Actions instead of direct DB functions
-import { addLead, getAllLeads, type Lead as DbLead } from "@/lib/actions/leadActions";
+import { addLead, getAllLeads, deleteLead, type Lead as DbLead } from "@/lib/actions/leadActions"; // Added deleteLead
 
 // Define DisplayLead interface for frontend use
 interface DisplayLead extends DbLead {
@@ -63,6 +74,8 @@ export default function LeadsPage() {
   const [isAddLeadOpen, setIsAddLeadOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isPending, startTransition] = useTransition(); // For server action loading state
+  const [isDeleting, setIsDeleting] = useState(false); // State for delete loading
+  const [leadToDelete, setLeadToDelete] = useState<DisplayLead | null>(null); // State to hold lead for deletion confirmation
 
   // Initialize react-hook-form
   const form = useForm<LeadInput>({
@@ -118,7 +131,9 @@ export default function LeadsPage() {
 
   // Submit handler using server action
   const onSubmit = (data: LeadInput) => {
+    console.log("[onSubmit Lead] Form data submitted (raw):", data);
     startTransition(async () => {
+        console.log("[onSubmit Lead] Starting transition...");
       try {
         // Prepare data matching the expected type in the Server Action
         const leadDataForAction: Omit<DbLead, 'id' | 'createdAt' | 'updatedAt'> = {
@@ -130,9 +145,16 @@ export default function LeadsPage() {
           assignedTo: data.assignedTo || null,
           notes: data.notes || null,
         };
+        console.log("[onSubmit Lead] Data prepared for action:", leadDataForAction);
 
         // Call the Server Action
         const newLeadId = await addLead(leadDataForAction);
+        console.log("[onSubmit Lead] Server action returned new ID:", newLeadId);
+
+        if (typeof newLeadId !== 'number' || newLeadId <= 0) {
+            console.error("[onSubmit Lead] Invalid ID received:", newLeadId);
+            throw new Error("No se recibió un ID válido del servidor.");
+        }
 
         // Optimistic Update using data prepared for the action
         const newDisplayLead: DisplayLead = {
@@ -142,6 +164,7 @@ export default function LeadsPage() {
           updatedAt: new Date().toISOString(),
         };
         setLeads((prev) => [newDisplayLead, ...prev]);
+        console.log("[onSubmit Lead] Optimistic update applied.");
 
         toast({
           title: "Lead Añadido",
@@ -150,20 +173,60 @@ export default function LeadsPage() {
         });
         setIsAddLeadOpen(false);
         form.reset();
+        console.log("[onSubmit Lead] Form reset, dialog closed.");
       } catch (error: any) {
-        console.error("Error adding lead:", error);
+        console.error("[onSubmit Lead] Error adding lead:", error);
         toast({
           title: "Error al añadir lead",
           description: error.message || "No se pudo guardar el lead.",
           variant: "destructive",
         });
+         console.log("[onSubmit Lead] End transition with error.");
       }
     });
   };
 
+    // Handle lead deletion
+    const handleDeleteLead = async (id: number) => {
+        setIsDeleting(true); // Set deleting state
+        try {
+        const success = await deleteLead(id); // Call server action
+        if (success) {
+            setLeads((prevLeads) => prevLeads.filter((lead) => lead.id !== id)); // Update state optimistically
+            toast({
+            title: "Lead Eliminado",
+            description: `El lead ha sido eliminado correctamente.`,
+            variant: "default",
+            });
+            setLeadToDelete(null); // Close confirmation dialog
+        } else {
+             toast({
+                title: "Error al eliminar",
+                description: "No se pudo encontrar o eliminar el lead.",
+                variant: "destructive",
+            });
+        }
+        } catch (error: any) {
+        console.error(`Error deleting lead ${id}:`, error);
+        toast({
+            title: "Error al eliminar lead",
+            description: error.message || "Ocurrió un error inesperado.",
+            variant: "destructive",
+        });
+        } finally {
+            setIsDeleting(false); // Reset deleting state
+        }
+    };
+
+    // Open confirmation dialog
+    const confirmDeleteLead = (lead: DisplayLead) => {
+        setLeadToDelete(lead);
+    };
+
   // Render Add/Edit Lead Form
    const renderLeadForm = (formId: string) => (
      <Form {...form}>
+        {/* Use onSubmit on form directly for RHF */}
         <form onSubmit={form.handleSubmit(onSubmit)} id={formId} className="grid gap-4 py-4">
           <FormField
             control={form.control}
@@ -278,7 +341,10 @@ export default function LeadsPage() {
                 </FormItem>
                 )}
             />
-
+           {/* Submit button inside the form component is not needed if using form attribute */}
+            {/* <Button type="submit" disabled={isPending}>
+                {isPending ? "Guardando..." : "Guardar Lead"}
+            </Button> */}
         </form>
       </Form>
    );
@@ -343,6 +409,7 @@ export default function LeadsPage() {
                    <DialogClose asChild>
                     <Button variant="outline" disabled={isPending}>Cancelar</Button>
                    </DialogClose>
+                  {/* Use type="submit" and form attribute to trigger the form's onSubmit */}
                   <Button type="submit" form="add-lead-form" disabled={isPending}>
                     {isPending ? (
                       <>
@@ -434,7 +501,17 @@ export default function LeadsPage() {
                                  </div>
                               )}
                          </div>
-                         <DialogFooter className="mt-4 pt-4 border-t">
+                         <DialogFooter className="mt-4 pt-4 border-t flex justify-between items-center">
+                            {/* Delete Button Trigger */}
+                             <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => confirmDeleteLead(lead)} // Trigger confirmation
+                                disabled={isDeleting}
+                             >
+                                {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                                <span className="ml-1">Eliminar</span>
+                             </Button>
                             {/* Add Edit button here later */}
                             <DialogClose asChild>
                                 <Button type="button" variant="secondary">Cerrar</Button>
@@ -491,6 +568,37 @@ export default function LeadsPage() {
                 </CardContent>
             </Card>
         )}
+
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={!!leadToDelete} onOpenChange={(open) => !open && setLeadToDelete(null)}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
+                <AlertDialogDescription>
+                    Esta acción no se puede deshacer. Esto eliminará permanentemente el lead <span className="font-semibold">{leadToDelete?.name}</span> de tus registros.
+                </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
+                <AlertDialogAction
+                    onClick={() => leadToDelete && handleDeleteLead(leadToDelete.id)}
+                    disabled={isDeleting}
+                    className={cn(
+                         "bg-destructive text-destructive-foreground hover:bg-destructive/90", // Destructive variant styling
+                         isDeleting && "opacity-50 cursor-not-allowed"
+                     )}
+                >
+                    {isDeleting ? (
+                    <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Eliminando...
+                    </>
+                    ) : "Eliminar"}
+                </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+
 
     </div>
   );

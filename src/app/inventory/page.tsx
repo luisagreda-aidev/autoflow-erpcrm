@@ -15,7 +15,7 @@ import {
   CardContent,
   CardFooter,
 } from "@/components/ui/card";
-import { PlusCircle, Search, Filter, X, ChevronDown, Calendar as CalendarIcon, Car, Upload, Trash2, Loader2 } from "lucide-react";
+import { PlusCircle, Search, Filter, X, ChevronDown, Calendar as CalendarIcon, Car, Upload, Trash2, Loader2, AlertTriangle } from "lucide-react"; // Added AlertTriangle
 import Image from "next/image";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -37,6 +37,17 @@ import {
   DialogTrigger,
   DialogClose
 } from "@/components/ui/dialog";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"; // Import Alert Dialog
 import {
   Form,
   FormControl,
@@ -64,7 +75,7 @@ import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 // Import Server Actions instead of direct DB functions
-import { addVehicle, getAllVehicles, type Vehicle as DbVehicle } from "@/lib/actions/vehicleActions";
+import { addVehicle, getAllVehicles, deleteVehicle, type Vehicle as DbVehicle } from "@/lib/actions/vehicleActions"; // Added deleteVehicle
 
 // Define Vehicle interface for frontend use, extending DbVehicle slightly
 interface DisplayVehicle extends Omit<DbVehicle, 'features' | 'images'> {
@@ -97,8 +108,10 @@ export default function InventoryPage() {
   const [selectedVehicle, setSelectedVehicle] = useState<DisplayVehicle | null>(null);
   const [imagePreviews, setImagePreviews] = useState<{ file: File; preview: string }[]>([]); // State for image previews during upload
   const fileInputRef = useRef<HTMLInputElement>(null); // Ref for file input
-  const [isPending, startTransition] = useTransition(); // For server action loading state
+  const [isPending, startTransition] = useTransition(); // For add/edit server action loading state
   const [isLoading, setIsLoading] = useState(true); // Loading state for initial data fetch
+  const [isDeleting, setIsDeleting] = useState(false); // State for delete loading
+  const [vehicleToDelete, setVehicleToDelete] = useState<DisplayVehicle | null>(null); // State for delete confirmation
 
   // Fetch initial vehicles on component mount using Server Action
   useEffect(() => {
@@ -146,6 +159,18 @@ export default function InventoryPage() {
     fetchVehicles();
   }, [toast]);
 
+  // Debugging useEffect to show form errors in console
+    useEffect(() => {
+       if (form.formState.isSubmitSuccessful === false && Object.keys(form.formState.errors).length > 0) {
+           console.error("Form Validation Errors:", form.formState.errors); // Log validation errors
+           toast({
+               title: "Errores de validación",
+               description: "Por favor, revisa los campos marcados en rojo.",
+               variant: "destructive",
+            });
+       }
+    }, [form.formState.errors, form.formState.isSubmitSuccessful, toast]);
+
 
   // Initialize react-hook-form
   const form = useForm<VehicleInput>({
@@ -171,8 +196,7 @@ export default function InventoryPage() {
     },
   });
 
-  // Field-specific errors are shown by FormMessage components.
-  // Submission errors are handled in the onSubmit catch block.
+
 
 
   // Clean up Object URLs on component unmount or when imagePreviews changes
@@ -204,45 +228,56 @@ export default function InventoryPage() {
     }
   };
 
-  // Handle image selection
-  const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+ // Handle image selection
+ const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (files) {
-        const currentFiles = form.getValues('images') || []; // Get current File array from form state
-        const newFiles = Array.from(files);
+      const currentFiles = form.getValues('images') || []; // Get current File array from form state
+      const newFiles = Array.from(files);
 
-         // Filter out files that don't pass basic client-side validation (optional but good practice)
-        const validNewFiles = newFiles.filter(file => {
-             if (file.size > 5 * 1024 * 1024) {
-                 toast({
-                    title: "Archivo Demasiado Grande",
-                    description: `"${file.name}" supera el límite de 5MB.`,
-                    variant: "destructive"
-                 });
-                 return false;
-             }
-             // Add MIME type check if needed
-             return true;
-         });
+      // Filter out files that don't pass basic client-side validation (optional but good practice)
+      const validNewFiles = newFiles.filter(file => {
+        if (file.size > 5 * 1024 * 1024) {
+          toast({
+            title: "Archivo Demasiado Grande",
+            description: `"${file.name}" supera el límite de 5MB.`,
+            variant: "destructive"
+          });
+          return false;
+        }
+        if (!vehicleSchema.shape.images.element.parse({})._def.schema._def.checks.find((check: any) => check.kind === 'refine' && check.message?.includes('Solo se aceptan'))?.check(file.type)) {
+             toast({
+                 title: "Tipo de Archivo No Válido",
+                 description: `"${file.name}" tiene un formato no soportado.`,
+                 variant: "destructive"
+             });
+             return false;
+         }
+        return true;
+      });
 
+      // Create new preview objects for newly selected *valid* files
+      const newPreviews = validNewFiles.map(file => ({
+        file,
+        preview: URL.createObjectURL(file)
+      }));
 
-        // Create new preview objects for newly selected *valid* files
-        const newPreviews = validNewFiles.map(file => ({
-            file,
-            preview: URL.createObjectURL(file)
-        }));
+      // Combine existing files (from form state) and new *valid* files
+      const updatedFiles = [...currentFiles, ...validNewFiles];
 
-        // Combine existing files (from form state) and new *valid* files
-        const updatedFiles = [...currentFiles, ...validNewFiles];
+      // Combine existing previews (from local state) and new previews
+      const updatedImagePreviewState = [...imagePreviews, ...newPreviews];
 
-        // Combine existing previews (from local state) and new previews
-        const updatedImagePreviewState = [...imagePreviews, ...newPreviews];
+      setImagePreviews(updatedImagePreviewState); // Update local preview state
+      form.setValue('images', updatedFiles, { shouldValidate: true }); // Update form with the combined File objects
+      console.log(`[handleImageChange] Added ${validNewFiles.length} valid files. Total files in form: ${updatedFiles.length}`);
 
-        setImagePreviews(updatedImagePreviewState); // Update local preview state
-        form.setValue('images', updatedFiles, { shouldValidate: true }); // Update form with the combined File objects
-         console.log(`[handleImageChange] Added ${validNewFiles.length} valid files. Total files in form: ${updatedFiles.length}`);
+       // Clear the file input value to allow re-selecting the same file
+       if (event.target) {
+           event.target.value = "";
+       }
     }
-};
+  };
 
 
   // Remove image preview and update form state
@@ -274,153 +309,181 @@ export default function InventoryPage() {
     };
 
 
-  // Submit handler using server action with FormData
-    const onSubmit = (data: VehicleInput) => {
-        console.log("[onSubmit] Form data validated by RHF:", data);
+ // Submit handler using server action with FormData
+ const onSubmit = (data: VehicleInput) => {
+    console.log("[onSubmit Vehicle] Form data validated by RHF:", data);
 
-        // Create FormData object
-        const formData = new FormData();
+    // Create FormData object
+    const formData = new FormData();
 
-        // Append standard fields
-        Object.entries(data).forEach(([key, value]) => {
-            if (key !== 'images' && value !== undefined && value !== null) {
-                if (value instanceof Date) {
-                    formData.append(key, value.toISOString()); // Send dates as ISO strings
-                } else if (Array.isArray(value)) {
-                     // Assuming features are the only array here, join them or handle appropriately
-                     if (key === 'features') {
-                         formData.append(key, value.join(',')); // Send as comma-separated string
-                     } else {
-                        // Handle other potential arrays if necessary
-                     }
-                }
-                 else {
-                    formData.append(key, String(value));
-                }
-            } else if (key === 'cost' && value === null) {
-                 formData.append(key, ''); // Send empty string for null cost if needed by backend, or omit
-            }
-        });
-
-        // Append image files
-        if (data.images && data.images.length > 0) {
-            data.images.forEach((file, index) => {
-                formData.append('images', file, file.name); // Use the same key 'images' for all files
-                console.log(`[onSubmit] Appending file to FormData: ${file.name}`);
-            });
+    // Append standard fields
+    Object.entries(data).forEach(([key, value]) => {
+      if (key !== 'images' && value !== undefined && value !== null) {
+        if (value instanceof Date) {
+          formData.append(key, value.toISOString()); // Send dates as ISO strings
+        } else if (key === 'features' && Array.isArray(value)) {
+            // Stringify the array for FormData
+            formData.append(key, JSON.stringify(value));
         } else {
-             console.log("[onSubmit] No image files to append to FormData.");
+          formData.append(key, String(value));
+        }
+      } else if (key === 'cost' && value === null) {
+        // Omit or send empty string based on backend expectation for null cost
+         formData.append(key, '');
+      }
+    });
+
+    // Append image files (from RHF's validated data)
+    if (data.images && data.images.length > 0) {
+      data.images.forEach((file, index) => {
+        formData.append('images', file, file.name); // Use the same key 'images' for all files
+        console.log(`[onSubmit Vehicle] Appending file to FormData: ${file.name}`);
+      });
+    } else {
+      console.log("[onSubmit Vehicle] No image files to append to FormData.");
+    }
+
+    console.log("[onSubmit Vehicle] FormData prepared. Keys:", Array.from(formData.keys()));
+    // Don't log entire formData values due to potentially large file data
+
+    startTransition(async () => {
+      console.log("[onSubmit Vehicle] Starting transition...");
+      try {
+        console.log("[onSubmit Vehicle] Calling addVehicle server action with FormData...");
+        // Call the Server Action with FormData
+        const newVehicleId = await addVehicle(formData); // Pass FormData directly
+        console.log("[onSubmit Vehicle] Server action returned new vehicle ID:", newVehicleId);
+
+        // --- Verify ID before proceeding ---
+        if (typeof newVehicleId !== 'number' || newVehicleId <= 0) {
+          console.error("[onSubmit Vehicle] Invalid ID received from server action:", newVehicleId);
+          throw new Error("Server action did not return a valid new vehicle ID.");
         }
 
-         console.log("[onSubmit] FormData prepared. Keys:", Array.from(formData.keys()));
-         // Don't log entire formData values due to potentially large file data
+        // --- Optimistic Update (using original validated data) ---
+        // Derive optimistic URLs based on filenames (adjust if server changes names significantly)
+        const optimisticImageUrls = (data.images || []).map(file => {
+             // Simplified assumption - use a placeholder structure or refine based on actual server logic
+             const uniqueSuffix = `temp-${Date.now()}`; // Placeholder for uniqueness
+             const extension = file.name.split('.').pop();
+             return `/uploads/vehicles/${file.name.split('.')[0]}-${uniqueSuffix}.${extension}`;
+         });
 
+        console.log("[onSubmit Vehicle] Generating optimistic image URLs:", optimisticImageUrls);
 
-        startTransition(async () => {
-            console.log("[onSubmit] Starting transition...");
-            try {
-                console.log("[onSubmit] Calling addVehicle server action with FormData...");
-                // Call the Server Action with FormData
-                const newVehicleId = await addVehicle(formData); // Pass FormData directly
-                console.log("[onSubmit] Server action returned new vehicle ID:", newVehicleId);
+        const newDisplayVehicle: DisplayVehicle = {
+          id: newVehicleId,
+          make: data.make,
+          model: data.model,
+          year: Number(data.year),
+          vin: data.vin,
+          price: Number(data.price),
+          mileage: Number(data.mileage),
+          status: data.status,
+          color: data.color || null,
+          engine: data.engine || null,
+          transmission: data.transmission,
+          condition: data.condition || null,
+          documentation: data.documentation || null,
+          entryDate: data.entryDate.toISOString(),
+          cost: data.cost === undefined ? null : Number(data.cost),
+          imageUrl: optimisticImageUrls.length > 0 ? optimisticImageUrls[0] : (data.imageUrl || null),
+          features: data.features || [],
+          images: optimisticImageUrls,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
 
-                // --- Verify ID before proceeding ---
-                 if (typeof newVehicleId !== 'number' || newVehicleId <= 0) {
-                     console.error("[onSubmit] Invalid ID received from server action:", newVehicleId);
-                    throw new Error("Server action did not return a valid new vehicle ID.");
-                }
+        setVehicles((prev) => [newDisplayVehicle, ...prev]);
+        console.log("[onSubmit Vehicle] Optimistic update applied to state.");
 
+        toast({
+          title: "Vehículo Añadido",
+          description: `${data.make} ${data.model} ha sido añadido al inventario.`,
+          variant: "default",
+        });
+        setIsAddVehicleOpen(false);
+        form.reset();
+        console.log("[onSubmit Vehicle] Form reset.");
 
-                 // --- Optimistic Update (using original validated data and assuming success) ---
-                 // The server action now returns the saved URLs. We *could* wait for the action
-                 // to return the URLs for the optimistic update, but that makes it less optimistic.
-                 // Let's assume the URLs will follow the pattern /uploads/vehicles/filename
-                 // This is a simplification and might not be robust if filenames change drastically server-side.
+        // Clean up previews after successful submission
+        try {
+          if (imagePreviews && imagePreviews.length > 0) {
+            imagePreviews.forEach(img => URL.revokeObjectURL(img.preview));
+            console.log("[onSubmit Vehicle] Object URLs revoked.");
+          }
+          setImagePreviews([]);
+          console.log("[onSubmit Vehicle] Image previews state cleared.");
+        } catch (revokeError) {
+          console.error("[onSubmit Vehicle] Error revoking object URLs:", revokeError);
+        }
 
-                const optimisticImageUrls = (data.images || []).map(file =>
-                    `/uploads/vehicles/${file.name}` // Simplified assumption - might need adjustment
-                 );
+        console.log("[onSubmit Vehicle] Submission process finished successfully.");
 
-                 console.log("[onSubmit] Generating optimistic image URLs:", optimisticImageUrls);
+      } catch (error: any) {
+        console.error("[onSubmit Vehicle] Error during vehicle submission process:", error);
+        let description = "No se pudo guardar el vehículo.";
+        if (error instanceof z.ZodError) {
+          description = "Error de validación. Revisa los campos.";
+          console.error("Zod Errors:", error.flatten());
+        } else if (error.message.includes('VIN')) {
+          description = `Error: El VIN ya existe.`;
+        } else if (error.message.includes('constraint')) {
+          description = `Error: Valor inválido proporcionado.`;
+        } else if (error.message.includes('imagen')) {
+          description = `Error al procesar una imagen: ${error.message}`;
+        } else if (error.message) {
+           description = error.message;
+        }
 
+        toast({
+          title: "Error al añadir vehículo",
+          description: description,
+          variant: "destructive",
+        });
+        console.log("[onSubmit Vehicle] End transition with error.");
+      }
+    });
+  };
 
-                const newDisplayVehicle: DisplayVehicle = {
-                     id: newVehicleId, // Use the returned ID
-                     make: data.make,
-                     model: data.model,
-                     year: Number(data.year), // Ensure number type
-                     vin: data.vin,
-                     price: Number(data.price), // Ensure number type
-                     mileage: Number(data.mileage), // Ensure number type
-                     status: data.status,
-                     color: data.color || null,
-                     engine: data.engine || null,
-                     transmission: data.transmission,
-                     condition: data.condition || null,
-                     documentation: data.documentation || null,
-                     entryDate: data.entryDate.toISOString(), // Use ISO string
-                     cost: data.cost === undefined ? null : Number(data.cost), // Ensure number or null
-                     imageUrl: optimisticImageUrls.length > 0 ? optimisticImageUrls[0] : (data.imageUrl || null),
-                     // --- For display ---
-                     features: data.features || [], // Use original features array
-                     images: optimisticImageUrls, // Use the optimistic URLs
-                     // Add createdAt/updatedAt placeholder
-                     createdAt: new Date().toISOString(),
-                     updatedAt: new Date().toISOString(),
-                 };
-
-                setVehicles((prev) => [newDisplayVehicle, ...prev]);
-                console.log("[onSubmit] Optimistic update applied to state.");
-
-
+  // Handle vehicle deletion
+    const handleDeleteVehicle = async (id: number) => {
+        setIsDeleting(true);
+        try {
+            const success = await deleteVehicle(id); // Call server action
+            if (success) {
+                setVehicles((prevVehicles) => prevVehicles.filter((vehicle) => vehicle.id !== id));
                 toast({
-                    title: "Vehículo Añadido",
-                    description: `${data.make} ${data.model} ha sido añadido al inventario.`,
-                    variant: "default", // Use "success" if available or default
+                    title: "Vehículo Eliminado",
+                    description: `El vehículo ha sido eliminado correctamente.`,
+                    variant: "default",
                 });
-                setIsAddVehicleOpen(false);
-                form.reset();
-                console.log("[onSubmit] Form reset.");
-
-                // Clean up previews after successful submission
-                try {
-                     if (imagePreviews && imagePreviews.length > 0) {
-                         imagePreviews.forEach(img => URL.revokeObjectURL(img.preview));
-                         console.log("[onSubmit] Object URLs revoked.");
-                     }
-                    setImagePreviews([]);
-                    console.log("[onSubmit] Image previews state cleared.");
-                } catch (revokeError) {
-                     console.error("[onSubmit] Error revoking object URLs:", revokeError);
-                }
-
-                console.log("[onSubmit] Submission process finished successfully.");
-            } catch (error: any) {
-                 console.error("[onSubmit] Error during vehicle submission process:", error);
-                 let description = "No se pudo guardar el vehículo.";
-                 if (error instanceof z.ZodError) {
-                     description = "Error de validación. Revisa los campos.";
-                     // Optionally log specific Zod errors
-                      console.error("Zod Errors:", error.flatten());
-                 } else if (error.message.includes('VIN')) {
-                     description = `Error: El VIN ya existe.`;
-                 } else if (error.message.includes('constraint')) {
-                     description = `Error: Valor inválido proporcionado.`;
-                 } else if (error.message.includes('imagen')) {
-                      description = `Error al procesar una imagen.`;
-                 } else if (error.message) {
-                      description = error.message;
-                 }
-
+                setVehicleToDelete(null); // Close confirmation
+                setIsDetailsOpen(false); // Close details modal if open
+            } else {
                 toast({
-                    title: "Error al añadir vehículo",
-                    description: description,
+                    title: "Error al eliminar",
+                    description: "No se pudo encontrar o eliminar el vehículo.",
                     variant: "destructive",
                 });
-                 console.log("[onSubmit] End transition with error.");
             }
-        });
+        } catch (error: any) {
+            console.error(`Error deleting vehicle ${id}:`, error);
+            toast({
+                title: "Error al eliminar vehículo",
+                description: error.message || "Ocurrió un error inesperado.",
+                variant: "destructive",
+            });
+        } finally {
+            setIsDeleting(false);
+        }
     };
+
+    // Open confirmation dialog
+    const confirmDeleteVehicle = (vehicle: DisplayVehicle) => {
+        setVehicleToDelete(vehicle);
+    };
+
 
   const openDetailsModal = (vehicle: DisplayVehicle) => {
     setSelectedVehicle(vehicle);
@@ -1224,17 +1287,58 @@ export default function InventoryPage() {
                             )}
                          </div>
                        </ScrollArea>
-                      <DialogFooter className="mt-4 pt-4 border-t">
+                      <DialogFooter className="mt-4 pt-4 border-t flex justify-between items-center">
+                         {/* Delete Button Trigger */}
+                          <Button
+                             variant="destructive"
+                             size="sm"
+                             onClick={() => confirmDeleteVehicle(selectedVehicle)}
+                             disabled={isDeleting}
+                         >
+                             {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                             <span className="ml-1">Eliminar Vehículo</span>
+                         </Button>
+                          {/* Edit Button Placeholder */}
+                          {/* <Button variant="outline" size="sm">Editar</Button> */}
                           <DialogClose asChild>
                             <Button type="button" variant="secondary">Cerrar</Button>
                           </DialogClose>
-                         {/* Add Edit/Delete buttons here later */}
                       </DialogFooter>
                      </>
                  )}
 
              </DialogContent>
         </Dialog>
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={!!vehicleToDelete} onOpenChange={(open) => !open && setVehicleToDelete(null)}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
+                <AlertDialogDescription>
+                    Esta acción no se puede deshacer. Esto eliminará permanentemente el vehículo <span className="font-semibold">{vehicleToDelete?.make} {vehicleToDelete?.model} (VIN: {vehicleToDelete?.vin})</span> y todas sus imágenes asociadas.
+                </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
+                <AlertDialogAction
+                    onClick={() => vehicleToDelete && handleDeleteVehicle(vehicleToDelete.id)}
+                    disabled={isDeleting}
+                     className={cn(
+                         "bg-destructive text-destructive-foreground hover:bg-destructive/90", // Destructive variant styling
+                         isDeleting && "opacity-50 cursor-not-allowed"
+                     )}
+                >
+                    {isDeleting ? (
+                    <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Eliminando...
+                    </>
+                    ) : "Eliminar"}
+                </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+
     </div>
   );
 }

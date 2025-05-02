@@ -19,6 +19,11 @@ const dbPath = path.join(dbDir, 'autoflow.db');
 // verbose: console.log helps in debugging SQL queries
 let db: Database.Database;
 try {
+    // Close existing connection if open, to prevent errors on hot reload
+    if (db && db.open) {
+      db.close();
+      console.log("Closed existing database connection before reopening.");
+    }
     db = new Database(dbPath, { verbose: console.log });
     console.log(`Database connected successfully at ${dbPath}`);
 } catch (error) {
@@ -158,42 +163,48 @@ export interface Lead {
  * @returns The id of the newly inserted vehicle.
  */
 export function _addVehicleInternal(vehicleData: Omit<Vehicle, 'id' | 'createdAt' | 'updatedAt'>): number {
-  const stmt = db.prepare(`
-    INSERT INTO vehicles (
-      make, model, year, vin, price, mileage, status, color, engine,
-      transmission, features, condition, documentation, entryDate, cost, imageUrl, images
-    ) VALUES (
-      @make, @model, @year, @vin, @price, @mileage, @status, @color, @engine,
-      @transmission, @features, @condition, @documentation, @entryDate, @cost, @imageUrl, @images
-    )
-  `);
+    console.log("[_addVehicleInternal] Adding vehicle with data:", { ...vehicleData, images: vehicleData.images ? 'JSON String present' : 'No JSON string' }); // Log data being inserted
 
-  try {
-    // Ensure features and images are valid JSON strings if provided, default to '[]'
-    const dataToInsert = {
-        ...vehicleData,
-        features: typeof vehicleData.features === 'string' ? vehicleData.features : JSON.stringify(vehicleData.features || []),
-        images: typeof vehicleData.images === 'string' ? vehicleData.images : JSON.stringify(vehicleData.images || []),
-        cost: vehicleData.cost === undefined ? null : vehicleData.cost // Handle undefined cost
-    };
+    const stmt = db.prepare(`
+        INSERT INTO vehicles (
+          make, model, year, vin, price, mileage, status, color, engine,
+          transmission, features, condition, documentation, entryDate, cost, imageUrl, images
+        ) VALUES (
+          @make, @model, @year, @vin, @price, @mileage, @status, @color, @engine,
+          @transmission, @features, @condition, @documentation, @entryDate, @cost, @imageUrl, @images
+        )
+      `);
 
-    const info = stmt.run(dataToInsert);
-    // Explicitly cast info.lastInsertRowid to number
-    return Number(info.lastInsertRowid);
-  } catch (error: any) {
-    // Handle potential unique constraint error for VIN
-    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
-      console.error(`Constraint Error: VIN '${vehicleData.vin}' already exists.`);
-      throw new Error(`Error: El VIN '${vehicleData.vin}' ya existe en la base de datos.`);
+    try {
+        // Ensure features and images are valid JSON strings if provided, default to '[]'
+        const dataToInsert = {
+            ...vehicleData,
+            features: typeof vehicleData.features === 'string' ? vehicleData.features : JSON.stringify(vehicleData.features || []),
+            images: typeof vehicleData.images === 'string' ? vehicleData.images : JSON.stringify(vehicleData.images || []),
+            cost: vehicleData.cost === undefined ? null : vehicleData.cost // Handle undefined cost
+        };
+
+        console.log("[_addVehicleInternal] Final data being inserted:", dataToInsert);
+
+        const info = stmt.run(dataToInsert);
+        console.log("[_addVehicleInternal] Insertion info:", info);
+        // Explicitly cast info.lastInsertRowid to number
+        return Number(info.lastInsertRowid);
+    } catch (error: any) {
+        console.error("[_addVehicleInternal] Error during insertion:", error); // Log the specific error
+        // Handle potential unique constraint error for VIN
+        if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+            console.error(`Constraint Error: VIN '${vehicleData.vin}' already exists.`);
+            throw new Error(`Error: El VIN '${vehicleData.vin}' ya existe en la base de datos.`);
+        }
+        if (error.code === 'SQLITE_CONSTRAINT_CHECK') {
+            console.error("Check constraint failed:", error.message);
+            // Be more specific if possible, e.g., check error message for column name
+            throw new Error("Error: Uno de los valores proporcionados no es válido (ej. estado, transmisión).");
+        }
+        console.error("Error adding vehicle:", error);
+        throw new Error("Error al añadir el vehículo a la base de datos.");
     }
-     if (error.code === 'SQLITE_CONSTRAINT_CHECK') {
-        console.error("Check constraint failed:", error.message);
-        // Be more specific if possible, e.g., check error message for column name
-        throw new Error("Error: Uno de los valores proporcionados no es válido (ej. estado, transmisión).");
-    }
-    console.error("Error adding vehicle:", error);
-    throw new Error("Error al añadir el vehículo a la base de datos.");
-  }
 }
 
 
@@ -307,6 +318,7 @@ export function _deleteVehicleInternal(id: number): boolean {
  * @returns The id of the newly inserted lead.
  */
 export function _addLeadInternal(leadData: Omit<Lead, 'id' | 'createdAt' | 'updatedAt'>): number {
+  console.log("[_addLeadInternal] Adding lead with data:", leadData); // ADDED
   const stmt = db.prepare(`
     INSERT INTO leads (name, email, phone, source, status, assignedTo, notes)
     VALUES (@name, @email, @phone, @source, @status, @assignedTo, @notes)
@@ -322,9 +334,12 @@ export function _addLeadInternal(leadData: Omit<Lead, 'id' | 'createdAt' | 'upda
         assignedTo: leadData.assignedTo || null,
         notes: leadData.notes || null,
     };
+     console.log("[_addLeadInternal] Final data being inserted:", dataToInsert); // ADDED
     const info = stmt.run(dataToInsert);
+    console.log("[_addLeadInternal] Insertion info:", info); // ADDED
     return Number(info.lastInsertRowid);
   } catch (error: any) {
+    console.error("[_addLeadInternal] Error during insertion:", error); // ADDED
      if (error.code === 'SQLITE_CONSTRAINT_CHECK') {
          console.error("Check constraint failed:", error.message);
          throw new Error(`Error: Valor inválido para el estado del lead: ${leadData.status}`);
@@ -350,7 +365,27 @@ export function _getAllLeadsInternal(): Lead[] {
     }
 }
 
-// TODO: Implement _getLeadByIdInternal, _updateLeadInternal, _deleteLeadInternal
+
+/**
+ * Deletes a lead by its ID.
+ * Should only be called from server-side code.
+ * @param id - The ID of the lead to delete.
+ * @returns true if the deletion was successful, false otherwise.
+ */
+export function _deleteLeadInternal(id: number): boolean {
+    const stmt = db.prepare('DELETE FROM leads WHERE id = ?');
+    try {
+      const info = stmt.run(id);
+      console.log(`[_deleteLeadInternal] Attempted to delete lead ${id}. Changes: ${info.changes}`);
+      return info.changes > 0; // Returns true if at least one row was deleted
+    } catch (error) {
+      console.error(`Error deleting lead with ID ${id}:`, error);
+      throw new Error("Error al eliminar el lead de la base de datos.");
+    }
+  }
+
+
+// TODO: Implement _getLeadByIdInternal, _updateLeadInternal
 
 // ---- Utility ----
 
@@ -366,32 +401,5 @@ export function closeDb() {
   }
 }
 
-// Graceful shutdown handling (runs only on the server)
-let isClosing = false;
-const shutdown = () => {
-  if (!isClosing) {
-    isClosing = true;
-    console.log("Closing database connection due to process exit...");
-    closeDb();
-    process.exit(0); // Exit process after closing DB
-  }
-};
-
-if (typeof process !== 'undefined' && process.on) {
-    process.on('exit', closeDb);
-    process.on('SIGINT', shutdown); // Close on Ctrl+C
-    process.on('SIGTERM', shutdown); // Close on termination signal
-    process.on('SIGUSR2', shutdown); // Close on nodemon restart
-}
-
-// Re-export internal functions as async Server Actions if needed elsewhere
-// Example:
-// export async function addVehicle(vehicleData: Omit<Vehicle, 'id' | 'createdAt' | 'updatedAt'>): Promise<number> {
-//    'use server';
-//    return _addVehicleInternal(vehicleData);
-// }
-// Do this for all functions that need to be callable as Server Actions from client components.
-// Keep internal sync functions for server-to-server calls.
-
-// Export internal functions directly for use in other server-side modules (like reports.ts)
-export { db }; // Export db instance only for server-side modules
+// Export db instance only for server-side modules
+export { db };
