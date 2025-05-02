@@ -108,8 +108,9 @@ export default function InventoryPage() {
         const dbVehicles = await getAllVehicles(); // Use Server Action
         const displayVehicles = dbVehicles.map(v => ({
           ...v,
-          features: v.features ? JSON.parse(v.features) : [],
-          images: v.images ? JSON.parse(v.images) : [],
+          // Ensure features and images are parsed correctly, handle potential invalid JSON
+          features: typeof v.features === 'string' ? JSON.parse(v.features || '[]') : [],
+          images: typeof v.images === 'string' ? JSON.parse(v.images || '[]') : [],
         }));
         setVehicles(displayVehicles);
       } catch (error: any) {
@@ -151,15 +152,19 @@ export default function InventoryPage() {
     },
   });
 
-   // REMOVED: useEffect for logging form validation errors.
+   // REMOVED: useEffect for logging form validation errors on unsuccessful submit.
    // Field-specific errors are shown by FormMessage components.
    // Submission errors are handled in the onSubmit catch block.
+
 
   // Clean up Object URLs on component unmount or when imagePreviews changes
   useEffect(() => {
     // This function will run when the component unmounts or before the effect runs again
     return () => {
-      imagePreviews.forEach(image => URL.revokeObjectURL(image.preview));
+      // Check if imagePreviews exists before iterating
+      if (imagePreviews && imagePreviews.length > 0) {
+          imagePreviews.forEach(image => URL.revokeObjectURL(image.preview));
+      }
     };
   }, [imagePreviews]); // Dependency array ensures cleanup runs if previews change
 
@@ -214,8 +219,11 @@ export default function InventoryPage() {
         setImagePreviews(updatedPreviews);
         form.setValue('images', updatedFiles, { shouldValidate: true });
 
-        // Clean up object URL
-        URL.revokeObjectURL(imageToRemove.preview);
+        // Clean up object URL only if imageToRemove exists
+        if (imageToRemove) {
+           URL.revokeObjectURL(imageToRemove.preview);
+        }
+
 
         // Reset file input if needed (optional, allows re-selecting the same file if removed)
         if (fileInputRef.current) {
@@ -231,103 +239,115 @@ export default function InventoryPage() {
 
   // Submit handler using server action
   const onSubmit = (data: VehicleInput) => {
-     console.log("Form data on submit:", data); // Log form data
+     console.log("[onSubmit] Form data submitted:", data); // Log raw form data
     startTransition(async () => {
-      try {
-        console.log("Starting vehicle submission...");
-        // --- Convert File objects to Data URIs for submission ---
-         const uploadedImageUrls = await Promise.all(
-             (data.images || []).map(async (file) => {
-                 return new Promise<string>((resolve, reject) => {
-                     const reader = new FileReader();
-                     reader.onload = () => resolve(reader.result as string);
-                     reader.onerror = (error) => reject(error);
-                     reader.readAsDataURL(file); // Read file as Data URI
-                 });
-             })
-         );
-         console.log("Image Data URIs generated:", uploadedImageUrls.length);
+        console.log("[onSubmit] Starting transition...");
+        try {
+            console.log("[onSubmit] Processing images...");
+            // --- Convert File objects to Data URIs for submission ---
+            const uploadedImageUrls = await Promise.all(
+                (data.images || []).map(async (file) => {
+                    return new Promise<string>((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                            console.log(`[onSubmit] Image read successfully: ${file.name}`);
+                            resolve(reader.result as string);
+                        };
+                        reader.onerror = (error) => {
+                             console.error(`[onSubmit] Error reading image ${file.name}:`, error);
+                             reject(error);
+                        };
+                        reader.readAsDataURL(file); // Read file as Data URI
+                    });
+                })
+            );
+            console.log("[onSubmit] Image Data URIs generated:", uploadedImageUrls.length);
 
 
-        // Prepare data for the database (matching the expected type in the Server Action)
-        const vehicleDataForAction: Omit<DbVehicle, 'id' | 'createdAt' | 'updatedAt'> = {
-          make: data.make,
-          model: data.model,
-          year: Number(data.year),
-          vin: data.vin,
-          price: Number(data.price), // Ensure price is number
-          mileage: Number(data.mileage), // Ensure mileage is number
-          status: data.status,
-          color: data.color || null,
-          engine: data.engine || null,
-          transmission: data.transmission,
-          features: JSON.stringify(data.features || []), // Stringify features
-          condition: data.condition || null,
-          documentation: data.documentation || null,
-          entryDate: data.entryDate.toISOString(),
-          cost: data.cost ? Number(data.cost) : null, // Ensure cost is number or null
-          imageUrl: data.imageUrl || (uploadedImageUrls.length > 0 ? uploadedImageUrls[0] : null),
-          images: JSON.stringify(uploadedImageUrls), // Stringify image data URIs
-        };
-        console.log("Data prepared for action:", vehicleDataForAction);
+            // Prepare data for the database (matching the expected type in the Server Action)
+            const vehicleDataForAction: Omit<DbVehicle, 'id' | 'createdAt' | 'updatedAt'> = {
+                make: data.make,
+                model: data.model,
+                year: Number(data.year),
+                vin: data.vin,
+                price: Number(data.price), // Ensure price is number
+                mileage: Number(data.mileage), // Ensure mileage is number
+                status: data.status,
+                color: data.color || null,
+                engine: data.engine || null,
+                transmission: data.transmission,
+                features: JSON.stringify(data.features || []), // Stringify features
+                condition: data.condition || null,
+                documentation: data.documentation || null,
+                entryDate: data.entryDate.toISOString(),
+                cost: data.cost ? Number(data.cost) : null, // Ensure cost is number or null
+                // Use first generated Data URI as imageUrl if no specific imageUrl provided
+                imageUrl: data.imageUrl || (uploadedImageUrls.length > 0 ? uploadedImageUrls[0] : null),
+                images: JSON.stringify(uploadedImageUrls), // Stringify image data URIs
+            };
+            console.log("[onSubmit] Data prepared for action:", vehicleDataForAction);
 
 
-        // Call the Server Action
-        console.log("Calling addVehicle server action...");
-        const newVehicleId = await addVehicle(vehicleDataForAction);
-        console.log("Server action returned new ID:", newVehicleId);
+            // Call the Server Action
+            console.log("[onSubmit] Calling addVehicle server action...");
+            const newVehicleId = await addVehicle(vehicleDataForAction);
+            console.log("[onSubmit] Server action returned new ID:", newVehicleId);
+
+            // --- Optimistic Update (using data prepared for the action) ---
+            const newDisplayVehicle: DisplayVehicle = {
+                id: newVehicleId, // Use the returned ID
+                make: vehicleDataForAction.make,
+                model: vehicleDataForAction.model,
+                year: vehicleDataForAction.year,
+                vin: vehicleDataForAction.vin,
+                price: vehicleDataForAction.price,
+                mileage: vehicleDataForAction.mileage,
+                status: vehicleDataForAction.status,
+                color: vehicleDataForAction.color,
+                engine: vehicleDataForAction.engine,
+                transmission: vehicleDataForAction.transmission,
+                condition: vehicleDataForAction.condition,
+                documentation: vehicleDataForAction.documentation,
+                entryDate: vehicleDataForAction.entryDate, // Already ISO string
+                cost: vehicleDataForAction.cost, // Already number or null
+                imageUrl: vehicleDataForAction.imageUrl,
+                // --- For display, parse the JSON strings back ---
+                features: data.features || [], // Use original features array for display
+                images: uploadedImageUrls, // Use the data URIs for display
+                // Add createdAt/updatedAt placeholder
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+            };
+            setVehicles((prev) => [newDisplayVehicle, ...prev]);
+            console.log("[onSubmit] Optimistic update applied to state.");
 
 
-        // Optimistic Update (using data prepared for the action)
-         const newDisplayVehicle: DisplayVehicle = {
-          id: newVehicleId, // Use the returned ID
-          make: vehicleDataForAction.make,
-          model: vehicleDataForAction.model,
-          year: vehicleDataForAction.year,
-          vin: vehicleDataForAction.vin,
-          price: vehicleDataForAction.price,
-          mileage: vehicleDataForAction.mileage,
-          status: vehicleDataForAction.status,
-          color: vehicleDataForAction.color,
-          engine: vehicleDataForAction.engine,
-          transmission: vehicleDataForAction.transmission,
-          condition: vehicleDataForAction.condition,
-          documentation: vehicleDataForAction.documentation,
-          entryDate: vehicleDataForAction.entryDate, // Already ISO string
-          cost: vehicleDataForAction.cost, // Already number or null
-          imageUrl: vehicleDataForAction.imageUrl,
-          // --- For display, parse the JSON strings back ---
-          features: data.features || [], // Use original features array for display
-          images: uploadedImageUrls, // Use the data URIs for display
-          // Add createdAt/updatedAt placeholder
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        setVehicles((prev) => [newDisplayVehicle, ...prev]);
-        console.log("Optimistic update applied to state.");
-
-
-        toast({
-          title: "Vehículo Añadido",
-          description: `${data.make} ${data.model} ha sido añadido al inventario.`,
-          variant: "default",
-        });
-        setIsAddVehicleOpen(false);
-        form.reset();
-        // Clean up previews after successful submission
-        imagePreviews.forEach(img => URL.revokeObjectURL(img.preview));
-        setImagePreviews([]);
-        console.log("Form reset and previews cleaned.");
-      } catch (error: any) {
-        console.error("Error in onSubmit during vehicle submission:", error); // Log the specific error
-        toast({
-          title: "Error al añadir vehículo",
-          description: `No se pudo guardar el vehículo. ${error.message ? `Detalle: ${error.message}` : 'Revisa la consola para más información.'}`, // Include error message
-          variant: "destructive",
-        });
-      }
+            toast({
+                title: "Vehículo Añadido",
+                description: `${data.make} ${data.model} ha sido añadido al inventario.`,
+                variant: "default",
+            });
+            setIsAddVehicleOpen(false);
+            form.reset();
+            // Clean up previews after successful submission
+            if (imagePreviews && imagePreviews.length > 0) {
+                 imagePreviews.forEach(img => URL.revokeObjectURL(img.preview));
+            }
+            setImagePreviews([]);
+            console.log("[onSubmit] Form reset and previews cleaned.");
+        } catch (error: any) {
+            console.error("[onSubmit] Error during vehicle submission:", error); // Log the specific error
+             console.error("[onSubmit] Error stack:", error.stack); // Log the stack trace
+            toast({
+                title: "Error al añadir vehículo",
+                description: `No se pudo guardar el vehículo. ${error.message ? `Detalle: ${error.message}` : 'Revisa la consola para más información.'}`, // Include error message
+                variant: "destructive",
+            });
+             console.log("[onSubmit] End transition with error.");
+        }
+         console.log("[onSubmit] End transition.");
     });
-  };
+};
 
   const openDetailsModal = (vehicle: DisplayVehicle) => {
     setSelectedVehicle(vehicle);
@@ -829,7 +849,9 @@ export default function InventoryPage() {
                 setIsAddVehicleOpen(open);
                 if (!open) {
                      // Clean up previews when closing dialog if not submitted
-                    imagePreviews.forEach(img => URL.revokeObjectURL(img.preview));
+                     if (imagePreviews && imagePreviews.length > 0) {
+                        imagePreviews.forEach(img => URL.revokeObjectURL(img.preview));
+                     }
                     setImagePreviews([]);
                     form.reset(); // Reset form state
                 }
@@ -952,7 +974,9 @@ export default function InventoryPage() {
                 <Dialog open={isAddVehicleOpen} onOpenChange={(open) => {
                      setIsAddVehicleOpen(open);
                      if (!open) {
-                         imagePreviews.forEach(img => URL.revokeObjectURL(img.preview));
+                         if (imagePreviews && imagePreviews.length > 0) {
+                           imagePreviews.forEach(img => URL.revokeObjectURL(img.preview));
+                         }
                          setImagePreviews([]);
                          form.reset();
                      }
