@@ -234,7 +234,7 @@ export async function deleteVehicle(id: number): Promise<boolean> {
  * NOTE: This function is NOT marked async and is not a Server Action itself.
  * It's intended to be called during process shutdown events.
  */
-export function closeDb() {
+function closeDb() { // Removed 'export'
   if (db && db.open) {
     db.close();
     console.log("Database connection closed.");
