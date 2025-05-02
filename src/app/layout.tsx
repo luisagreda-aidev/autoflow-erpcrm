@@ -46,12 +46,9 @@ export default function RootLayout({
         <SidebarProvider>
           <Sidebar>
             <SidebarHeader className="flex items-center justify-between gap-2">
+                {/* Removed the icon wrapper */}
                 <Link href="/" className="flex items-center gap-2">
-                     {/* Placeholder Logo - replace with actual logo */}
-                     <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
-                        <Car size={18} />
-                    </div>
-                    <span className="text-lg font-semibold group-data-[collapsible=icon]:hidden">
+                    <span className="text-xl font-semibold group-data-[collapsible=icon]:hidden">
                         AutoFlow
                     </span>
                 </Link>
@@ -125,7 +122,7 @@ export default function RootLayout({
           </Sidebar>
 
           <SidebarInset>
-            <header className="sticky top-0 z-10 flex h-14 items-center gap-4 border-b bg-background px-4 sm:h-auto sm:border-0 sm:bg-transparent sm:px-6 sm:py-4">
+            <header className="sticky top-0 z-10 flex h-14 items-center gap-4 border-b bg-background/80 backdrop-blur-sm px-4 sm:h-auto sm:border-0 sm:bg-transparent sm:px-6 sm:py-4">
                  <SidebarTrigger className="hidden md:flex"/>
                  {/* Optional: Add global search or other header elements here */}
             </header>
