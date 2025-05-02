@@ -113,6 +113,30 @@ export default function InventoryPage() {
   const [isDeleting, setIsDeleting] = useState(false); // State for delete loading
   const [vehicleToDelete, setVehicleToDelete] = useState<DisplayVehicle | null>(null); // State for delete confirmation
 
+  // Initialize react-hook-form - MOVED UP
+  const form = useForm<VehicleInput>({
+    resolver: zodResolver(vehicleSchema),
+    defaultValues: {
+      make: "",
+      model: "",
+      year: undefined, // Use undefined for number fields to satisfy zod optional/required
+      vin: "",
+      price: undefined, // Default to undefined for zod number validation
+      mileage: undefined, // Default to undefined for zod number validation
+      status: "En preparación",
+      color: "",
+      engine: "",
+      transmission: "Manual",
+      features: [],
+      condition: "",
+      documentation: "",
+      entryDate: new Date(),
+      cost: undefined, // Make cost optional
+      imageUrl: "",
+      images: [], // Initialize images array (File objects for validation)
+    },
+  });
+
   // Fetch initial vehicles on component mount using Server Action
   useEffect(() => {
     const fetchVehicles = async () => {
@@ -159,8 +183,8 @@ export default function InventoryPage() {
     fetchVehicles();
   }, [toast]);
 
-  // Debugging useEffect to show form errors in console
-    useEffect(() => {
+  // Debugging useEffect to show form errors in console - NOW form is initialized
+  useEffect(() => {
        if (form.formState.isSubmitSuccessful === false && Object.keys(form.formState.errors).length > 0) {
            console.error("Form Validation Errors:", form.formState.errors); // Log validation errors
            toast({
@@ -169,34 +193,7 @@ export default function InventoryPage() {
                variant: "destructive",
             });
        }
-    }, [form.formState.errors, form.formState.isSubmitSuccessful, toast]);
-
-
-  // Initialize react-hook-form
-  const form = useForm<VehicleInput>({
-    resolver: zodResolver(vehicleSchema),
-    defaultValues: {
-      make: "",
-      model: "",
-      year: undefined, // Use undefined for number fields to satisfy zod optional/required
-      vin: "",
-      price: undefined, // Default to undefined for zod number validation
-      mileage: undefined, // Default to undefined for zod number validation
-      status: "En preparación",
-      color: "",
-      engine: "",
-      transmission: "Manual",
-      features: [],
-      condition: "",
-      documentation: "",
-      entryDate: new Date(),
-      cost: undefined, // Make cost optional
-      imageUrl: "",
-      images: [], // Initialize images array (File objects for validation)
-    },
-  });
-
-
+  }, [form.formState.errors, form.formState.isSubmitSuccessful, toast]);
 
 
   // Clean up Object URLs on component unmount or when imagePreviews changes
@@ -245,7 +242,9 @@ export default function InventoryPage() {
           });
           return false;
         }
-        if (!vehicleSchema.shape.images.element.parse({})._def.schema._def.checks.find((check: any) => check.kind === 'refine' && check.message?.includes('Solo se aceptan'))?.check(file.type)) {
+        // Correctly access the refine check within the Zod schema
+        const imageSchema = vehicleSchema.shape.images.element;
+         if (!imageSchema._def.schema._def.checks.find((check: any) => check.kind === 'refine' && check.message?.includes('Solo se aceptan'))?.check(file.type)) {
              toast({
                  title: "Tipo de Archivo No Válido",
                  description: `"${file.name}" tiene un formato no soportado.`,
@@ -1289,15 +1288,17 @@ export default function InventoryPage() {
                        </ScrollArea>
                       <DialogFooter className="mt-4 pt-4 border-t flex justify-between items-center">
                          {/* Delete Button Trigger */}
-                          <Button
-                             variant="destructive"
-                             size="sm"
-                             onClick={() => confirmDeleteVehicle(selectedVehicle)}
-                             disabled={isDeleting}
-                         >
-                             {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                             <span className="ml-1">Eliminar Vehículo</span>
-                         </Button>
+                          <AlertDialogTrigger asChild>
+                              <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  onClick={() => confirmDeleteVehicle(selectedVehicle)}
+                                  disabled={isDeleting}
+                              >
+                                  {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                                  <span className="ml-1">Eliminar Vehículo</span>
+                              </Button>
+                           </AlertDialogTrigger>
                           {/* Edit Button Placeholder */}
                           {/* <Button variant="outline" size="sm">Editar</Button> */}
                           <DialogClose asChild>
