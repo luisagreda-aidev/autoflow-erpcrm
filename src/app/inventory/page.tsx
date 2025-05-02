@@ -69,8 +69,8 @@ import { addVehicle, getAllVehicles, type Vehicle as DbVehicle } from "@/lib/act
 // Define Vehicle interface for frontend use, extending DbVehicle slightly
 interface DisplayVehicle extends Omit<DbVehicle, 'features' | 'images'> {
   features: string[]; // Parsed features
-  images: string[]; // Parsed image URLs/Data URIs
-  // Add local preview state if needed during upload, but not part of DbVehicle
+  images: string[]; // Parsed image URLs (relative paths or full URLs based on server action)
+  // Local state for managing file previews during upload
   localImagePreviews?: { file: File; preview: string }[];
 }
 
@@ -106,12 +106,31 @@ export default function InventoryPage() {
       setIsLoading(true);
       try {
         const dbVehicles = await getAllVehicles(); // Use Server Action
-        const displayVehicles = dbVehicles.map(v => ({
-          ...v,
-          // Ensure features and images are parsed correctly, handle potential invalid JSON
-          features: typeof v.features === 'string' ? JSON.parse(v.features || '[]') : [],
-          images: typeof v.images === 'string' ? JSON.parse(v.images || '[]') : [],
-        }));
+        const displayVehicles = dbVehicles.map(v => {
+          let parsedImages: string[] = [];
+          try {
+             // Assuming images are stored as a JSON string array of relative URLs
+             parsedImages = typeof v.images === 'string' ? JSON.parse(v.images || '[]') : [];
+          } catch (e) {
+            console.error(`Error parsing images JSON for vehicle ${v.id}:`, v.images, e);
+            // Keep parsedImages as empty array on error
+          }
+
+          let parsedFeatures: string[] = [];
+           try {
+             parsedFeatures = typeof v.features === 'string' ? JSON.parse(v.features || '[]') : [];
+           } catch (e) {
+             console.error(`Error parsing features JSON for vehicle ${v.id}:`, v.features, e);
+             // Keep parsedFeatures as empty array on error
+           }
+
+
+          return {
+            ...v,
+            features: parsedFeatures,
+            images: parsedImages, // Parsed relative URLs
+          };
+        });
         setVehicles(displayVehicles);
       } catch (error: any) {
         console.error("Error fetching vehicles:", error); // Log the actual error
@@ -152,9 +171,8 @@ export default function InventoryPage() {
     },
   });
 
-   // REMOVED: useEffect for logging form validation errors on unsuccessful submit.
-   // Field-specific errors are shown by FormMessage components.
-   // Submission errors are handled in the onSubmit catch block.
+  // Field-specific errors are shown by FormMessage components.
+  // Submission errors are handled in the onSubmit catch block.
 
 
   // Clean up Object URLs on component unmount or when imagePreviews changes
@@ -164,6 +182,7 @@ export default function InventoryPage() {
       // Check if imagePreviews exists before iterating
       if (imagePreviews && imagePreviews.length > 0) {
           imagePreviews.forEach(image => URL.revokeObjectURL(image.preview));
+          console.log("[Cleanup Effect] Revoked Object URLs for previews.");
       }
     };
   }, [imagePreviews]); // Dependency array ensures cleanup runs if previews change
@@ -192,20 +211,36 @@ export default function InventoryPage() {
         const currentFiles = form.getValues('images') || []; // Get current File array from form state
         const newFiles = Array.from(files);
 
-        // Create new preview objects for newly selected files
-        const newPreviews = newFiles.map(file => ({
+         // Filter out files that don't pass basic client-side validation (optional but good practice)
+        const validNewFiles = newFiles.filter(file => {
+             if (file.size > 5 * 1024 * 1024) {
+                 toast({
+                    title: "Archivo Demasiado Grande",
+                    description: `"${file.name}" supera el límite de 5MB.`,
+                    variant: "destructive"
+                 });
+                 return false;
+             }
+             // Add MIME type check if needed
+             return true;
+         });
+
+
+        // Create new preview objects for newly selected *valid* files
+        const newPreviews = validNewFiles.map(file => ({
             file,
             preview: URL.createObjectURL(file)
         }));
 
-        // Combine existing files (from form state) and new files
-        const updatedFiles = [...currentFiles, ...newFiles];
+        // Combine existing files (from form state) and new *valid* files
+        const updatedFiles = [...currentFiles, ...validNewFiles];
 
         // Combine existing previews (from local state) and new previews
         const updatedImagePreviewState = [...imagePreviews, ...newPreviews];
 
         setImagePreviews(updatedImagePreviewState); // Update local preview state
         form.setValue('images', updatedFiles, { shouldValidate: true }); // Update form with the combined File objects
+         console.log(`[handleImageChange] Added ${validNewFiles.length} valid files. Total files in form: ${updatedFiles.length}`);
     }
 };
 
@@ -222,6 +257,7 @@ export default function InventoryPage() {
         // Clean up object URL only if imageToRemove exists
         if (imageToRemove) {
            URL.revokeObjectURL(imageToRemove.preview);
+            console.log(`[removeImage] Revoked Object URL for preview ${index}.`);
         }
 
 
@@ -229,6 +265,7 @@ export default function InventoryPage() {
         if (fileInputRef.current) {
             fileInputRef.current.value = "";
         }
+         console.log(`[removeImage] Removed image at index ${index}. Total files in form: ${updatedFiles.length}`);
     };
 
     // Trigger file input click
@@ -237,153 +274,153 @@ export default function InventoryPage() {
     };
 
 
-  // Submit handler using server action
-  const onSubmit = (data: VehicleInput) => {
-     console.log("[onSubmit] Form data submitted (raw):", data); // Log raw form data
-    startTransition(async () => {
-        console.log("[onSubmit] Starting transition...");
-        try {
-            console.log("[onSubmit] Processing images to Data URIs...");
-            // --- Convert File objects to Data URIs for submission ---
-            const uploadedImageUrls = await Promise.all(
-                (data.images || []).map(async (file) => {
-                    return new Promise<string>((resolve, reject) => {
-                        const reader = new FileReader();
-                        reader.onload = () => {
-                            console.log(`[onSubmit] Image read successfully: ${file.name} (Result length: ${reader.result?.toString().length})`);
-                            resolve(reader.result as string);
-                        };
-                        reader.onerror = (error) => {
-                             console.error(`[onSubmit] Error reading image ${file.name}:`, error);
-                             reject(new Error(`Error reading file ${file.name}`));
-                        };
-                         reader.onabort = () => {
-                            console.warn(`[onSubmit] Image read aborted: ${file.name}`);
-                            reject(new Error(`File reading aborted for ${file.name}`));
-                        };
-                        reader.readAsDataURL(file); // Read file as Data URI
-                    });
-                })
-            );
-            console.log("[onSubmit] Image Data URIs generated:", uploadedImageUrls.length > 0 ? `${uploadedImageUrls.length} images` : 'No images');
-            // Log first few chars of first data URI if exists
-            if (uploadedImageUrls.length > 0) {
-                console.log("[onSubmit] First Data URI start:", uploadedImageUrls[0].substring(0, 100) + "...");
+  // Submit handler using server action with FormData
+    const onSubmit = (data: VehicleInput) => {
+        console.log("[onSubmit] Form data validated by RHF:", data);
+
+        // Create FormData object
+        const formData = new FormData();
+
+        // Append standard fields
+        Object.entries(data).forEach(([key, value]) => {
+            if (key !== 'images' && value !== undefined && value !== null) {
+                if (value instanceof Date) {
+                    formData.append(key, value.toISOString()); // Send dates as ISO strings
+                } else if (Array.isArray(value)) {
+                     // Assuming features are the only array here, join them or handle appropriately
+                     if (key === 'features') {
+                         formData.append(key, value.join(',')); // Send as comma-separated string
+                     } else {
+                        // Handle other potential arrays if necessary
+                     }
+                }
+                 else {
+                    formData.append(key, String(value));
+                }
+            } else if (key === 'cost' && value === null) {
+                 formData.append(key, ''); // Send empty string for null cost if needed by backend, or omit
             }
+        });
 
-
-            // Prepare data for the database (matching the expected type in the Server Action)
-            const vehicleDataForAction: Omit<DbVehicle, 'id' | 'createdAt' | 'updatedAt'> = {
-                make: data.make,
-                model: data.model,
-                year: Number(data.year),
-                vin: data.vin,
-                price: Number(data.price), // Ensure price is number
-                mileage: Number(data.mileage), // Ensure mileage is number
-                status: data.status,
-                color: data.color || null,
-                engine: data.engine || null,
-                transmission: data.transmission,
-                features: JSON.stringify(data.features || []), // Stringify features
-                condition: data.condition || null,
-                documentation: data.documentation || null,
-                entryDate: data.entryDate.toISOString(),
-                cost: data.cost ? Number(data.cost) : null, // Ensure cost is number or null
-                // Use first generated Data URI as imageUrl if no specific imageUrl provided
-                imageUrl: data.imageUrl || (uploadedImageUrls.length > 0 ? uploadedImageUrls[0] : null),
-                images: JSON.stringify(uploadedImageUrls), // Stringify image data URIs
-            };
-            console.log("[onSubmit] Data prepared for action:", {
-                ...vehicleDataForAction,
-                 // Avoid logging potentially huge image data strings in production
-                 images: `JSON string with ${uploadedImageUrls.length} image(s)`,
-                 imageUrl: vehicleDataForAction.imageUrl ? vehicleDataForAction.imageUrl.substring(0, 100) + "..." : null
+        // Append image files
+        if (data.images && data.images.length > 0) {
+            data.images.forEach((file, index) => {
+                formData.append('images', file, file.name); // Use the same key 'images' for all files
+                console.log(`[onSubmit] Appending file to FormData: ${file.name}`);
             });
-
-
-            // Call the Server Action
-            console.log("[onSubmit] Calling addVehicle server action...");
-            const newVehicleId = await addVehicle(vehicleDataForAction);
-            console.log("[onSubmit] Server action returned new vehicle ID:", newVehicleId);
-
-            // --- Verify ID before proceeding ---
-            if (typeof newVehicleId !== 'number' || newVehicleId <= 0) {
-                throw new Error("Server action did not return a valid new vehicle ID.");
-            }
-
-
-            // --- Optimistic Update (using data prepared for the action) ---
-            const newDisplayVehicle: DisplayVehicle = {
-                id: newVehicleId, // Use the returned ID
-                make: vehicleDataForAction.make,
-                model: vehicleDataForAction.model,
-                year: vehicleDataForAction.year,
-                vin: vehicleDataForAction.vin,
-                price: vehicleDataForAction.price,
-                mileage: vehicleDataForAction.mileage,
-                status: vehicleDataForAction.status,
-                color: vehicleDataForAction.color,
-                engine: vehicleDataForAction.engine,
-                transmission: vehicleDataForAction.transmission,
-                condition: vehicleDataForAction.condition,
-                documentation: vehicleDataForAction.documentation,
-                entryDate: vehicleDataForAction.entryDate, // Already ISO string
-                cost: vehicleDataForAction.cost, // Already number or null
-                imageUrl: vehicleDataForAction.imageUrl,
-                // --- For display, parse the JSON strings back ---
-                features: data.features || [], // Use original features array for display
-                images: uploadedImageUrls, // Use the data URIs for display
-                // Add createdAt/updatedAt placeholder
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-            };
-            setVehicles((prev) => [newDisplayVehicle, ...prev]);
-            console.log("[onSubmit] Optimistic update applied to state.");
-
-
-            toast({
-                title: "Vehículo Añadido",
-                description: `${data.make} ${data.model} ha sido añadido al inventario.`,
-                variant: "default", // Use "success" if available or default
-            });
-            setIsAddVehicleOpen(false);
-            form.reset();
-            console.log("[onSubmit] Form reset.");
-
-            // Clean up previews after successful submission
-            try {
-                 if (imagePreviews && imagePreviews.length > 0) {
-                     imagePreviews.forEach(img => URL.revokeObjectURL(img.preview));
-                     console.log("[onSubmit] Object URLs revoked.");
-                 }
-                setImagePreviews([]);
-                console.log("[onSubmit] Image previews state cleared.");
-            } catch (revokeError) {
-                 console.error("[onSubmit] Error revoking object URLs:", revokeError);
-            }
-
-            console.log("[onSubmit] Submission process finished successfully.");
-        } catch (error: any) {
-            console.error("[onSubmit] Error during vehicle submission process:", error);
-            console.error("[onSubmit] Error Name:", error.name);
-            console.error("[onSubmit] Error Message:", error.message);
-            console.error("[onSubmit] Error Stack:", error.stack);
-            toast({
-                title: "Error al añadir vehículo",
-                // Provide more specific feedback based on common errors if possible
-                description: error.message.includes('VIN') ? `Error: El VIN ya existe.` :
-                             error.message.includes('constraint') ? `Error: Valor inválido proporcionado.` :
-                             error.message.includes('reading file') ? `Error al procesar una imagen.` :
-                             error.message || "No se pudo guardar el vehículo. Revisa la consola para más detalles.",
-                variant: "destructive",
-            });
-             console.log("[onSubmit] End transition with error.");
-        } finally {
-            // This block executes regardless of success or error
-            console.log("[onSubmit] End transition (finally block).");
+        } else {
+             console.log("[onSubmit] No image files to append to FormData.");
         }
-    });
-};
+
+         console.log("[onSubmit] FormData prepared. Keys:", Array.from(formData.keys()));
+         // Don't log entire formData values due to potentially large file data
+
+
+        startTransition(async () => {
+            console.log("[onSubmit] Starting transition...");
+            try {
+                console.log("[onSubmit] Calling addVehicle server action with FormData...");
+                // Call the Server Action with FormData
+                const newVehicleId = await addVehicle(formData); // Pass FormData directly
+                console.log("[onSubmit] Server action returned new vehicle ID:", newVehicleId);
+
+                // --- Verify ID before proceeding ---
+                 if (typeof newVehicleId !== 'number' || newVehicleId <= 0) {
+                     console.error("[onSubmit] Invalid ID received from server action:", newVehicleId);
+                    throw new Error("Server action did not return a valid new vehicle ID.");
+                }
+
+
+                 // --- Optimistic Update (using original validated data and assuming success) ---
+                 // The server action now returns the saved URLs. We *could* wait for the action
+                 // to return the URLs for the optimistic update, but that makes it less optimistic.
+                 // Let's assume the URLs will follow the pattern /uploads/vehicles/filename
+                 // This is a simplification and might not be robust if filenames change drastically server-side.
+
+                const optimisticImageUrls = (data.images || []).map(file =>
+                    `/uploads/vehicles/${file.name}` // Simplified assumption - might need adjustment
+                 );
+
+                 console.log("[onSubmit] Generating optimistic image URLs:", optimisticImageUrls);
+
+
+                const newDisplayVehicle: DisplayVehicle = {
+                     id: newVehicleId, // Use the returned ID
+                     make: data.make,
+                     model: data.model,
+                     year: Number(data.year), // Ensure number type
+                     vin: data.vin,
+                     price: Number(data.price), // Ensure number type
+                     mileage: Number(data.mileage), // Ensure number type
+                     status: data.status,
+                     color: data.color || null,
+                     engine: data.engine || null,
+                     transmission: data.transmission,
+                     condition: data.condition || null,
+                     documentation: data.documentation || null,
+                     entryDate: data.entryDate.toISOString(), // Use ISO string
+                     cost: data.cost === undefined ? null : Number(data.cost), // Ensure number or null
+                     imageUrl: optimisticImageUrls.length > 0 ? optimisticImageUrls[0] : (data.imageUrl || null),
+                     // --- For display ---
+                     features: data.features || [], // Use original features array
+                     images: optimisticImageUrls, // Use the optimistic URLs
+                     // Add createdAt/updatedAt placeholder
+                     createdAt: new Date().toISOString(),
+                     updatedAt: new Date().toISOString(),
+                 };
+
+                setVehicles((prev) => [newDisplayVehicle, ...prev]);
+                console.log("[onSubmit] Optimistic update applied to state.");
+
+
+                toast({
+                    title: "Vehículo Añadido",
+                    description: `${data.make} ${data.model} ha sido añadido al inventario.`,
+                    variant: "default", // Use "success" if available or default
+                });
+                setIsAddVehicleOpen(false);
+                form.reset();
+                console.log("[onSubmit] Form reset.");
+
+                // Clean up previews after successful submission
+                try {
+                     if (imagePreviews && imagePreviews.length > 0) {
+                         imagePreviews.forEach(img => URL.revokeObjectURL(img.preview));
+                         console.log("[onSubmit] Object URLs revoked.");
+                     }
+                    setImagePreviews([]);
+                    console.log("[onSubmit] Image previews state cleared.");
+                } catch (revokeError) {
+                     console.error("[onSubmit] Error revoking object URLs:", revokeError);
+                }
+
+                console.log("[onSubmit] Submission process finished successfully.");
+            } catch (error: any) {
+                 console.error("[onSubmit] Error during vehicle submission process:", error);
+                 let description = "No se pudo guardar el vehículo.";
+                 if (error instanceof z.ZodError) {
+                     description = "Error de validación. Revisa los campos.";
+                     // Optionally log specific Zod errors
+                      console.error("Zod Errors:", error.flatten());
+                 } else if (error.message.includes('VIN')) {
+                     description = `Error: El VIN ya existe.`;
+                 } else if (error.message.includes('constraint')) {
+                     description = `Error: Valor inválido proporcionado.`;
+                 } else if (error.message.includes('imagen')) {
+                      description = `Error al procesar una imagen.`;
+                 } else if (error.message) {
+                      description = error.message;
+                 }
+
+                toast({
+                    title: "Error al añadir vehículo",
+                    description: description,
+                    variant: "destructive",
+                });
+                 console.log("[onSubmit] End transition with error.");
+            }
+        });
+    };
 
   const openDetailsModal = (vehicle: DisplayVehicle) => {
     setSelectedVehicle(vehicle);
@@ -392,7 +429,8 @@ export default function InventoryPage() {
 
   const renderVehicleForm = (formId: string) => (
      <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} id={formId} className="grid gap-4 py-4">
+       {/* IMPORTANT: Use a standard form element, RHF will handle preventDefault */}
+      <form id={formId} className="grid gap-4 py-4">
         {/* Basic Info Row 1 */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <FormField
@@ -402,7 +440,7 @@ export default function InventoryPage() {
               <FormItem>
                 <FormLabel>Marca *</FormLabel>
                 <FormControl>
-                  <Input placeholder="Ej. Toyota" {...field} />
+                  <Input placeholder="Ej. Toyota" {...field} disabled={isPending}/>
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -415,7 +453,7 @@ export default function InventoryPage() {
               <FormItem>
                 <FormLabel>Modelo *</FormLabel>
                 <FormControl>
-                  <Input placeholder="Ej. Corolla" {...field} />
+                  <Input placeholder="Ej. Corolla" {...field} disabled={isPending}/>
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -441,6 +479,7 @@ export default function InventoryPage() {
                             field.onChange(val === '' || isNaN(num) ? undefined : num);
                         }}
                          onBlur={field.onBlur} // RHF handles blur validation
+                         disabled={isPending}
                     />
                 </FormControl>
                 <FormMessage />
@@ -458,7 +497,7 @@ export default function InventoryPage() {
                 <FormItem>
                     <FormLabel>VIN *</FormLabel>
                     <FormControl>
-                    <Input placeholder="Número de Bastidor (17 caract.)" {...field} />
+                    <Input placeholder="Número de Bastidor (17 caract.)" {...field} disabled={isPending}/>
                     </FormControl>
                     <FormMessage />
                 </FormItem>
@@ -471,7 +510,7 @@ export default function InventoryPage() {
                 <FormItem>
                     <FormLabel>Color</FormLabel>
                     <FormControl>
-                    <Input placeholder="Ej. Rojo Metálico" {...field} value={field.value ?? ''} />
+                    <Input placeholder="Ej. Rojo Metálico" {...field} value={field.value ?? ''} disabled={isPending}/>
                     </FormControl>
                     <FormMessage />
                 </FormItem>
@@ -496,6 +535,7 @@ export default function InventoryPage() {
                                     field.onChange(val === '' || isNaN(num) || num < 0 ? undefined : num);
                                 }}
                                 onBlur={field.onBlur} // RHF handles blur validation
+                                disabled={isPending}
                             />
                         </FormControl>
                         <FormMessage />
@@ -513,7 +553,7 @@ export default function InventoryPage() {
                 <FormItem>
                     <FormLabel>Motor</FormLabel>
                     <FormControl>
-                    <Input placeholder="Ej. 1.8L Híbrido" {...field} value={field.value ?? ''}/>
+                    <Input placeholder="Ej. 1.8L Híbrido" {...field} value={field.value ?? ''} disabled={isPending}/>
                     </FormControl>
                     <FormMessage />
                 </FormItem>
@@ -525,7 +565,7 @@ export default function InventoryPage() {
                 render={({ field }) => (
                 <FormItem>
                     <FormLabel>Transmisión *</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isPending}>
                         <FormControl>
                         <SelectTrigger>
                             <SelectValue placeholder="Selecciona transmisión" />
@@ -564,6 +604,7 @@ export default function InventoryPage() {
                                 field.onChange(val === '' || isNaN(num) || num <= 0 ? undefined : num);
                             }}
                             onBlur={field.onBlur} // RHF handles blur validation
+                            disabled={isPending}
                         />
                     </FormControl>
                     <FormMessage />
@@ -591,6 +632,7 @@ export default function InventoryPage() {
                                 field.onChange(val === '' || isNaN(num) || num < 0 ? undefined : num);
                             }}
                             onBlur={field.onBlur} // RHF handles blur validation
+                             disabled={isPending}
                         />
                     </FormControl>
                     <FormMessage />
@@ -603,7 +645,7 @@ export default function InventoryPage() {
                 render={({ field }) => (
                 <FormItem>
                     <FormLabel>Estado *</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isPending}>
                     <FormControl>
                         <SelectTrigger>
                         <SelectValue placeholder="Selecciona estado" />
@@ -639,6 +681,7 @@ export default function InventoryPage() {
                             "w-[240px] pl-3 text-left font-normal",
                             !field.value && "text-muted-foreground"
                           )}
+                           disabled={isPending}
                         >
                           {field.value ? (
                             format(field.value, "PPP", { locale: es })
@@ -655,7 +698,7 @@ export default function InventoryPage() {
                         selected={field.value}
                         onSelect={field.onChange}
                         disabled={(date) =>
-                          date > new Date() || date < new Date("1900-01-01")
+                          date > new Date() || date < new Date("1900-01-01") || isPending
                         }
                         initialFocus
                         locale={es}
@@ -677,7 +720,7 @@ export default function InventoryPage() {
                 <FormLabel>Características Destacadas</FormLabel>
                  <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="outline" className="w-full justify-between">
+                      <Button variant="outline" className="w-full justify-between" disabled={isPending}>
                         <span>Seleccionar características ({field.value?.length || 0})</span>
                         <ChevronDown className="h-4 w-4 opacity-50" />
                       </Button>
@@ -691,6 +734,7 @@ export default function InventoryPage() {
                           key={feature}
                           checked={field.value?.includes(feature)}
                           onCheckedChange={(checked) => {
+                            // This logic should be fine
                             return checked
                               ? field.onChange([...(field.value || []), feature])
                               : field.onChange(
@@ -700,6 +744,7 @@ export default function InventoryPage() {
                                 );
                           }}
                            onSelect={(e) => e.preventDefault()} // Prevent closing on select
+                           disabled={isPending}
                         >
                           {feature}
                         </DropdownMenuCheckboxItem>
@@ -715,7 +760,8 @@ export default function InventoryPage() {
                            <button
                              type="button"
                              className="ml-1 rounded-full outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                             onClick={() => field.onChange(field.value?.filter(f => f !== feature))}
+                             onClick={() => !isPending && field.onChange(field.value?.filter(f => f !== feature))}
+                             disabled={isPending}
                            >
                              <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />
                            </button>
@@ -741,6 +787,7 @@ export default function InventoryPage() {
                       className="resize-y min-h-[60px]"
                       {...field}
                       value={field.value ?? ""} // Ensure value is not null/undefined
+                      disabled={isPending}
                     />
                   </FormControl>
                   <FormMessage />
@@ -759,6 +806,7 @@ export default function InventoryPage() {
                       className="resize-y min-h-[60px]"
                       {...field}
                       value={field.value ?? ""} // Ensure value is not null/undefined
+                       disabled={isPending}
                     />
                   </FormControl>
                   <FormMessage />
@@ -777,11 +825,12 @@ export default function InventoryPage() {
                          {/* Hidden file input */}
                         <Input
                           type="file"
-                          accept="image/*"
+                          accept="image/jpeg,image/png,image/webp,image/avif" // Updated accept types
                           multiple
                           ref={fileInputRef}
                           className="hidden"
-                          onChange={handleImageChange}
+                           onChange={handleImageChange} // RHF doesn't manage file inputs directly, use custom handler
+                           // We don't need {...field} for file inputs
                           disabled={isPending} // Disable during submission
                         />
                       </FormControl>
@@ -817,7 +866,7 @@ export default function InventoryPage() {
                         <Button type="button" variant="outline" onClick={triggerFileInput} className="mt-2" disabled={isPending}>
                             <Upload className="mr-2 h-4 w-4" /> Subir Imágenes
                         </Button>
-                      <FormDescription>Sube una o varias imágenes del vehículo (máx. 5MB por imagen).</FormDescription>
+                      <FormDescription>Sube una o varias imágenes del vehículo (máx. 5MB por imagen, .jpg, .png, .webp, .avif).</FormDescription>
                        {/* Manually display form-level errors for 'images' if needed, or rely on FormMessage below */}
                       <FormMessage /> {/* Displays validation errors for the images field */}
                   </FormItem>
@@ -839,6 +888,7 @@ export default function InventoryPage() {
                   </FormItem>
                   )}
               />
+          {/* End of fields */}
         </form>
     </Form>
   );
@@ -888,15 +938,16 @@ export default function InventoryPage() {
                      try {
                          if (imagePreviews && imagePreviews.length > 0) {
                             imagePreviews.forEach(img => URL.revokeObjectURL(img.preview));
+                             console.log("[Dialog Close] Revoked Object URLs.");
                          }
                      } catch (revokeError) {
-                         console.error("Error revoking object URLs on dialog close:", revokeError);
+                         console.error("[Dialog Close] Error revoking object URLs:", revokeError);
                      }
                     setImagePreviews([]);
                     form.reset(); // Reset form state
-                    console.log("Add vehicle dialog closed, previews cleaned, form reset.");
+                    console.log("[Dialog Close] Add vehicle dialog closed, previews cleaned, form reset.");
                 } else {
-                     console.log("Add vehicle dialog opened.");
+                     console.log("[Dialog Open] Add vehicle dialog opened.");
                 }
             }}>
             <DialogTrigger asChild>
@@ -919,8 +970,12 @@ export default function InventoryPage() {
                  <DialogClose asChild>
                     <Button variant="outline" disabled={isPending}>Cancelar</Button>
                  </DialogClose>
-                {/* Submit button triggers form submission */}
-                <Button type="submit" form="add-vehicle-form" disabled={isPending}>
+                 {/* Submit button triggers form submission via RHF's handleSubmit */}
+                 <Button
+                    type="button" // Change type to button to prevent default form submission
+                    onClick={form.handleSubmit(onSubmit)} // Trigger RHF's submit handler
+                    disabled={isPending}
+                 >
                     {isPending ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -954,6 +1009,7 @@ export default function InventoryPage() {
             <Card key={vehicle.id} className="overflow-hidden flex flex-col shadow-md hover:shadow-lg transition-shadow duration-200">
               <CardHeader className="p-0 relative aspect-[3/2] w-full"> {/* Make header relative */}
                  {/* Use first image from images array, then imageUrl, then placeholder */}
+                 {/* IMPORTANT: Image URLs from filesystem are relative, prefix them */}
                  <Image
                     src={vehicle.images && vehicle.images.length > 0 ? vehicle.images[0] : (vehicle.imageUrl || 'https://picsum.photos/400/267?grayscale&blur=1')}
                     alt={`${vehicle.make} ${vehicle.model}`}
@@ -967,6 +1023,7 @@ export default function InventoryPage() {
                         if (target.src !== 'https://picsum.photos/400/267?grayscale&blur=1') {
                              target.src = 'https://picsum.photos/400/267?grayscale&blur=1';
                              target.alt = 'Placeholder Image';
+                             console.warn(`Failed to load image: ${vehicle.images && vehicle.images.length > 0 ? vehicle.images[0] : vehicle.imageUrl}, falling back to placeholder.`);
                          }
                     }}
                     priority={false} // Consider setting priority based on position
@@ -1020,15 +1077,16 @@ export default function InventoryPage() {
                           try {
                              if (imagePreviews && imagePreviews.length > 0) {
                                imagePreviews.forEach(img => URL.revokeObjectURL(img.preview));
+                                 console.log("[Dialog Close - Empty] Revoked Object URLs.");
                              }
                           } catch (revokeError) {
-                              console.error("Error revoking object URLs on empty state dialog close:", revokeError);
+                              console.error("[Dialog Close - Empty] Error revoking object URLs:", revokeError);
                           }
                          setImagePreviews([]);
                          form.reset();
-                         console.log("Add vehicle dialog (empty state) closed, previews cleaned, form reset.");
+                         console.log("[Dialog Close - Empty] Add vehicle dialog closed, previews cleaned, form reset.");
                      } else {
-                         console.log("Add vehicle dialog (empty state) opened.");
+                         console.log("[Dialog Open - Empty] Add vehicle dialog opened.");
                      }
                  }}>
                     <DialogTrigger asChild>
@@ -1050,7 +1108,12 @@ export default function InventoryPage() {
                            <DialogClose asChild>
                               <Button variant="outline" disabled={isPending}>Cancelar</Button>
                             </DialogClose>
-                            <Button type="submit" form="add-vehicle-form-empty" disabled={isPending}>
+                           {/* Submit button triggers form submission via RHF's handleSubmit */}
+                            <Button
+                                type="button" // Change type to button
+                                onClick={form.handleSubmit(onSubmit)} // Trigger RHF submit
+                                disabled={isPending}
+                            >
                                {isPending ? (
                                   <>
                                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1083,8 +1146,9 @@ export default function InventoryPage() {
                                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 mb-4">
                                     {selectedVehicle.images.map((imageUrl, index) => (
                                         <div key={index} className="relative aspect-[3/2] w-full rounded-md overflow-hidden">
+                                            {/* IMPORTANT: Image URLs are relative, prefix if needed (handled by next/image automatically if under /public) */}
                                             <Image
-                                                src={imageUrl} // Use the stored URL (Data URI or actual URL)
+                                                src={imageUrl} // Use the stored relative URL
                                                 alt={`${selectedVehicle.make} ${selectedVehicle.model} - Foto ${index + 1}`}
                                                 fill
                                                 className="object-cover"
@@ -1094,6 +1158,7 @@ export default function InventoryPage() {
                                                      if (target.src !== 'https://picsum.photos/300/200?grayscale&blur=1') {
                                                          target.src = 'https://picsum.photos/300/200?grayscale&blur=1';
                                                          target.alt = 'Placeholder Image';
+                                                         console.warn(`Failed to load detail image: ${imageUrl}, falling back to placeholder.`);
                                                      }
                                                 }}
                                             />
@@ -1116,6 +1181,7 @@ export default function InventoryPage() {
                                             if (target.src !== 'https://picsum.photos/600/400?grayscale&blur=1') {
                                                 target.src = 'https://picsum.photos/600/400?grayscale&blur=1';
                                                 target.alt = 'Placeholder Image';
+                                                 console.warn(`Failed to load detail imageUrl: ${selectedVehicle.imageUrl}, falling back to placeholder.`);
                                             }
                                         }}
                                     />

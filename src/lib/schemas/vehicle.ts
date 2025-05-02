@@ -2,8 +2,8 @@ import { z } from "zod";
 
 // Define max file size (e.g., 5MB)
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
-// Define allowed image types
-const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+// Define allowed image types - including AVIF
+const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/avif"];
 
 
 export const vehicleSchema = z.object({
@@ -17,22 +17,27 @@ export const vehicleSchema = z.object({
   color: z.string().optional(),
   engine: z.string().optional(),
   transmission: z.enum(["Manual", "Automática"]),
-  features: z.array(z.string()).optional().default([]), // Keep features optional, default empty
+  // Features are sent as comma-separated string in FormData, so validate as string then transform
+  features: z.preprocess(
+    (val) => (typeof val === 'string' ? val.split(',').map(s => s.trim()).filter(Boolean) : []),
+    z.array(z.string()).optional().default([])
+  ),
   condition: z.string().optional(),
   documentation: z.string().optional(),
-  entryDate: z.date().default(new Date()),
+  entryDate: z.date({ coerce: true }), // Coerce string from FormData to Date
   cost: z.number().nonnegative({ message: "El coste no puede ser negativo." }).optional().nullable(), // Make cost optional and nullable
   imageUrl: z.string().url({ message: "URL de imagen inválida." }).optional().or(z.literal('')), // Keep for optional single URL
 
-  // Update validation for multiple image uploads (File objects for client-side)
-  images: z.array(
-      z.instanceof(File)
-        .refine((file) => file.size <= MAX_FILE_SIZE, `El tamaño máximo es 5MB.`)
-        .refine(
-          (file) => ACCEPTED_IMAGE_TYPES.includes(file.type),
-          "Solo se aceptan .jpg, .jpeg, .png y .webp."
-        )
-    ).optional().default([]), // Make images optional and default to empty array for the form
+   // Validation for 'images' (File objects) on the client-side before FormData creation
+   // On the server, files are handled separately from this Zod schema used for standard fields
+   images: z.array(
+     z.instanceof(File, { message: "Se esperaba un archivo." })
+       .refine((file) => file.size <= MAX_FILE_SIZE, `El tamaño máximo es 5MB.`)
+       .refine(
+         (file) => ACCEPTED_IMAGE_TYPES.includes(file.type),
+         "Solo se aceptan .jpg, .jpeg, .png, .webp y .avif." // Added AVIF
+       )
+   ).optional().default([]), // Keep optional and default empty for the form state
 });
 
 export type VehicleInput = z.infer<typeof vehicleSchema>;
