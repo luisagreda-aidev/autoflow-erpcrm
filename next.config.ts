@@ -16,6 +16,12 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
+      { // Add this pattern to allow images from LinkedIn CDN
+        protocol: 'https',
+        hostname: 'media.licdn.com',
+        port: '',
+        pathname: '/**',
+      },
     ],
   },
    // Add this experimental flag to bundle 'better-sqlite3' for server components/actions

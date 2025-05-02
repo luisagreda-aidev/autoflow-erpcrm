@@ -115,7 +115,7 @@ export default function AppLayout({
                 <SidebarMenuItem>
                     <SidebarMenuButton size="lg" tooltip="Perfil">
                         <Image
-                            src="https://picsum.photos/40/40"
+                            src="https://media.licdn.com/dms/image/v2/D4E03AQGo5uKzpRHp9g/profile-displayphoto-shrink_800_800/B4EZWlXwfBHgAg-/0/1742236224470?e=1751500800&v=beta&t=Vh35hE8ZV4NvW4rwIkrNlyvpccEslERyDBIFc7xAlRE"
                             alt="User Avatar"
                             width={40}
                             height={40}
