@@ -9,10 +9,10 @@ const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/web
 export const vehicleSchema = z.object({
   make: z.string().min(1, { message: "La marca es obligatoria." }),
   model: z.string().min(1, { message: "El modelo es obligatorio." }),
-  year: z.number().int().min(1900, { message: "Año inválido." }).max(new Date().getFullYear() + 1, { message: "Año inválido." }),
+  year: z.number({required_error: "El año es obligatorio.", invalid_type_error: "Año inválido."}).int().min(1900, { message: "Año inválido." }).max(new Date().getFullYear() + 1, { message: "Año inválido." }),
   vin: z.string().length(17, { message: "El VIN debe tener 17 caracteres." }).toUpperCase(),
-  price: z.number().positive({ message: "El precio debe ser positivo." }),
-  mileage: z.number().nonnegative({ message: "El kilometraje no puede ser negativo." }),
+  price: z.number({required_error: "El precio es obligatorio.", invalid_type_error: "El precio debe ser un número."}).positive({ message: "El precio debe ser positivo." }),
+  mileage: z.number({required_error: "El kilometraje es obligatorio.", invalid_type_error: "El kilometraje debe ser un número."}).nonnegative({ message: "El kilometraje no puede ser negativo." }),
   status: z.enum(["En preparación", "Disponible", "Reservado", "Vendido", "Comprado"]),
   color: z.string().optional(),
   engine: z.string().optional(),

@@ -135,8 +135,8 @@ export default function InventoryPage() {
       model: "",
       year: new Date().getFullYear(),
       vin: "",
-      price: 0,
-      mileage: 0,
+      price: undefined, // Default to undefined for zod number validation
+      mileage: undefined, // Default to undefined for zod number validation
       status: "En preparación",
       color: "",
       engine: "",
@@ -150,6 +150,19 @@ export default function InventoryPage() {
       images: [], // Initialize images array (File objects for validation)
     },
   });
+
+   // Check for form errors on submission failure
+   useEffect(() => {
+       if (form.formState.isSubmitSuccessful === false && Object.keys(form.formState.errors).length > 0) {
+           console.error("Form Validation Errors:", form.formState.errors);
+           toast({
+               title: "Errores de validación",
+               description: "Por favor, revisa los campos marcados en rojo.",
+               variant: "destructive",
+           });
+       }
+   }, [form.formState.isSubmitSuccessful, form.formState.errors, toast]);
+
 
   // Clean up Object URLs on component unmount or when imagePreviews changes
   useEffect(() => {
@@ -227,10 +240,11 @@ export default function InventoryPage() {
 
   // Submit handler using server action
   const onSubmit = (data: VehicleInput) => {
+     console.log("Form data on submit:", data); // Log form data
     startTransition(async () => {
       try {
+        console.log("Starting vehicle submission...");
         // --- Convert File objects to Data URIs for submission ---
-        // This happens on the client before calling the server action
          const uploadedImageUrls = await Promise.all(
              (data.images || []).map(async (file) => {
                  return new Promise<string>((resolve, reject) => {
@@ -241,17 +255,17 @@ export default function InventoryPage() {
                  });
              })
          );
+         console.log("Image Data URIs generated:", uploadedImageUrls.length);
 
 
         // Prepare data for the database (matching the expected type in the Server Action)
-        // Note: The Server Action expects stringified JSON for features and images.
         const vehicleDataForAction: Omit<DbVehicle, 'id' | 'createdAt' | 'updatedAt'> = {
           make: data.make,
           model: data.model,
           year: Number(data.year),
           vin: data.vin,
-          price: Number(data.price),
-          mileage: Number(data.mileage),
+          price: Number(data.price), // Ensure price is number
+          mileage: Number(data.mileage), // Ensure mileage is number
           status: data.status,
           color: data.color || null,
           engine: data.engine || null,
@@ -260,14 +274,17 @@ export default function InventoryPage() {
           condition: data.condition || null,
           documentation: data.documentation || null,
           entryDate: data.entryDate.toISOString(),
-          cost: data.cost ? Number(data.cost) : null,
+          cost: data.cost ? Number(data.cost) : null, // Ensure cost is number or null
           imageUrl: data.imageUrl || (uploadedImageUrls.length > 0 ? uploadedImageUrls[0] : null),
           images: JSON.stringify(uploadedImageUrls), // Stringify image data URIs
         };
+        console.log("Data prepared for action:", vehicleDataForAction);
 
 
         // Call the Server Action
+        console.log("Calling addVehicle server action...");
         const newVehicleId = await addVehicle(vehicleDataForAction);
+        console.log("Server action returned new ID:", newVehicleId);
 
 
         // Optimistic Update (using data prepared for the action)
@@ -291,11 +308,12 @@ export default function InventoryPage() {
           // --- For display, parse the JSON strings back ---
           features: data.features || [], // Use original features array for display
           images: uploadedImageUrls, // Use the data URIs for display
-          // Add createdAt/updatedAt placeholder if needed
+          // Add createdAt/updatedAt placeholder
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
         setVehicles((prev) => [newDisplayVehicle, ...prev]);
+        console.log("Optimistic update applied to state.");
 
 
         toast({
@@ -308,11 +326,12 @@ export default function InventoryPage() {
         // Clean up previews after successful submission
         imagePreviews.forEach(img => URL.revokeObjectURL(img.preview));
         setImagePreviews([]);
+        console.log("Form reset and previews cleaned.");
       } catch (error: any) {
-        console.error("Error adding vehicle:", error);
+        console.error("Error in onSubmit during vehicle submission:", error); // Log the specific error
         toast({
           title: "Error al añadir vehículo",
-          description: error.message || "No se pudo guardar el vehículo.",
+          description: `No se pudo guardar el vehículo. ${error.message ? `Detalle: ${error.message}` : 'Revisa la consola para más información.'}`, // Include error message
           variant: "destructive",
         });
       }
@@ -371,14 +390,15 @@ export default function InventoryPage() {
                         onChange={e => {
                             const val = e.target.value;
                             // Parse to number or keep as empty string if input is cleared
-                            field.onChange(val === '' ? '' : parseInt(val, 10) || new Date().getFullYear());
+                            field.onChange(val === '' ? '' : parseInt(val, 10) || undefined);
                         }}
                          onBlur={e => {
-                             // Ensure a valid number or reset on blur if needed
+                             // Ensure a valid number or keep undefined on blur if invalid
                              const numValue = parseInt(e.target.value, 10);
                              if (isNaN(numValue) || numValue < 1900 || numValue > new Date().getFullYear() + 1) {
-                                // Optionally reset to default or keep invalid state for validation message
-                                // field.onChange(new Date().getFullYear()); // Example: Reset to current year
+                                // Let Zod handle the validation message
+                                // Optionally, reset to undefined if invalid on blur
+                                 field.onChange(undefined);
                              } else {
                                 field.onChange(numValue);
                              }
@@ -434,13 +454,13 @@ export default function InventoryPage() {
                                 onChange={e => {
                                     const val = e.target.value;
                                     const num = parseInt(val, 10);
-                                    // Allow empty string, otherwise parse and validate
-                                    field.onChange(val === '' ? '' : (num >= 0 ? num : 0));
+                                    // Allow empty string, otherwise parse
+                                    field.onChange(val === '' ? '' : num >= 0 ? num : undefined);
                                 }}
                                 onBlur={e => {
                                      const numValue = parseInt(e.target.value, 10);
                                      if (isNaN(numValue) || numValue < 0) {
-                                         field.onChange(0); // Reset to 0 if invalid or negative on blur
+                                         field.onChange(undefined); // Set to undefined if invalid/negative on blur for Zod validation
                                      } else {
                                         field.onChange(numValue);
                                      }
@@ -509,14 +529,13 @@ export default function InventoryPage() {
                             onChange={e => {
                                 const val = e.target.value;
                                 const num = parseFloat(val);
-                                // Allow empty string, otherwise parse and validate
-                                field.onChange(val === '' ? '' : (num > 0 ? num : 0));
+                                // Allow empty string, otherwise parse
+                                field.onChange(val === '' ? '' : num > 0 ? num : undefined);
                             }}
                              onBlur={e => {
                                  const numValue = parseFloat(e.target.value);
                                  if (isNaN(numValue) || numValue <= 0) {
-                                     // Optionally reset or keep invalid state
-                                     // field.onChange(0); // Example: Reset to 0
+                                      field.onChange(undefined); // Set undefined for Zod validation if invalid/non-positive
                                  } else {
                                      field.onChange(numValue);
                                  }
