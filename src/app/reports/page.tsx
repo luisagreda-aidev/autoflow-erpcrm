@@ -6,7 +6,7 @@ import { Bar, BarChart, CartesianGrid, XAxis, YAxis, ResponsiveContainer, LabelL
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { ChartConfig, ChartContainer, ChartTooltipContent } from "@/components/ui/chart";
 import { BarChart3, Users, Car, Activity, Loader2, AlertTriangle } from "lucide-react";
-import { getVehicleReportData, type VehicleReportData } from "@/lib/reports"; // Import report data fetching function
+import { getVehicleReportData, type VehicleReportData } from "@/lib/reports"; // Import report Server Action
 import { useToast } from "@/hooks/use-toast";
 
 // Define chart configurations for styling
@@ -26,7 +26,7 @@ const statusChartConfig = {
     label: "Vendido",
     color: "hsl(var(--destructive))",
   },
-  "en preparacion": { // Use lowercase keys matching data
+  enpreparación: { // Use consistent key format (lowercase, no spaces)
     label: "En Preparación",
     color: "hsl(var(--info))",
   },
@@ -48,6 +48,7 @@ export default function ReportsPage() {
       setIsLoading(true);
       setError(null);
       try {
+        // Call the Server Action to get data
         const data = await getVehicleReportData();
         setReportData(data);
       } catch (err: any) {
@@ -65,22 +66,29 @@ export default function ReportsPage() {
     fetchData();
   }, [toast]); // Add toast to dependency array
 
-  const statusChartData = React.useMemo(() => {
+ const statusChartData = React.useMemo(() => {
     if (!reportData?.vehiclesByStatus) return [];
+    // Map status keys to the keys used in statusChartConfig (lowercase, no spaces)
     return Object.entries(reportData.vehiclesByStatus)
-        .map(([status, count]) => ({
-        status: status.charAt(0).toUpperCase() + status.slice(1), // Capitalize status
-        count: count,
-        // Map status to lowercase key for config lookup
-        fillKey: status.toLowerCase().replace(/\s+/g, ''), // e.g., "En preparación" -> "enpreparacion" - Adjusted to match config
-    }));
-    // Re-adjust fillKey mapping if needed based on actual keys in reportData.vehiclesByStatus
+      .map(([status, count]) => {
+        let fillKey = status.toLowerCase().replace(/\s+/g, ''); // Default mapping
+        if (fillKey === 'enpreparación') fillKey = 'enpreparación'; // Ensure correct key for "En preparación"
+
+        return {
+          status: status, // Keep original status for XAxis label
+          count: count,
+          fillKey: fillKey // Use mapped key for config lookup
+        };
+      })
+      // Filter out statuses not in the config to prevent chart errors
+      .filter(entry => entry.fillKey in statusChartConfig);
   }, [reportData]);
+
 
   const reportSummaryCards = [
     { title: "Vehículos Totales", value: reportData?.totalVehicles ?? '--', description: "Número total en inventario.", icon: Car },
-    { title: "Precio Promedio", value: reportData?.averagePrice ? reportData.averagePrice.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' }) : '--', description: "Valor promedio de venta.", icon: BarChart3 },
-    { title: "Kilometraje Promedio", value: reportData?.averageMileage ? reportData.averageMileage.toLocaleString('es-ES') + ' km' : '--', description: "Promedio de km recorridos.", icon: Activity },
+    { title: "Precio Promedio", value: reportData?.averagePrice ? reportData.averagePrice.toLocaleString('es-ES', { style: 'currency', currency: 'EUR', minimumFractionDigits: 0, maximumFractionDigits: 0 }) : '--', description: "Valor promedio (disp./res./prep.).", icon: BarChart3 },
+    { title: "Km Promedio", value: reportData?.averageMileage ? Math.round(reportData.averageMileage).toLocaleString('es-ES') + ' km' : '--', description: "Promedio km (disp./res./prep.).", icon: Activity },
     // Add more cards as needed, e.g., for Leads once implemented
     { title: "Leads (Próximamente)", value: '--', description: "Rendimiento de leads.", icon: Users },
   ];
@@ -132,59 +140,78 @@ export default function ReportsPage() {
           </div>
 
           {/* Vehicle Status Chart */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Vehículos por Estado</CardTitle>
-              <CardDescription>Distribución actual del inventario según su estado.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {statusChartData.length > 0 ? (
-                 <ChartContainer config={statusChartConfig} className="min-h-[200px] w-full h-64">
+         <Card>
+             <CardHeader>
+               <CardTitle>Vehículos por Estado</CardTitle>
+               <CardDescription>Distribución actual del inventario según su estado.</CardDescription>
+             </CardHeader>
+             <CardContent>
+               {statusChartData.length > 0 ? (
+                 <ChartContainer config={statusChartConfig} className="min-h-[250px] w-full h-72">
                    <ResponsiveContainer width="100%" height="100%">
                      <BarChart
-                        accessibilityLayer
-                        data={statusChartData}
-                        margin={{ top: 20, left: -10, right: 0, bottom: 0 }}
+                       accessibilityLayer
+                       data={statusChartData}
+                       margin={{ top: 20, left: -10, right: 10, bottom: 5 }}
                      >
-                        <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                        <XAxis
+                       <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                       <XAxis
                          dataKey="status"
                          tickLine={false}
                          tickMargin={10}
                          axisLine={false}
-                         // tickFormatter={(value) => value.slice(0, 3)} // Use if labels are too long
+                         // tickFormatter={(value) => value.slice(0, 3)} // Optional: Shorten labels if needed
                        />
-                        <YAxis tickLine={false} axisLine={false} tickMargin={10} allowDecimals={false} />
-                        <Tooltip
-                          cursor={false}
-                          content={<ChartTooltipContent indicator="dot" hideLabel />}
-                        />
-                       <Bar dataKey="count" radius={4}>
-                         <LabelList
+                       <YAxis
+                         tickLine={false}
+                         axisLine={false}
+                         tickMargin={10}
+                         allowDecimals={false}
+                         width={30} // Adjust width for Y-axis labels
+                       />
+                       <ChartTooltip
+                         cursor={false}
+                         content={<ChartTooltipContent indicator="dot" hideLabel />}
+                       />
+                       {/* Define Bar component with dynamic fill */}
+                       <Bar dataKey="count" radius={4} >
+                         {statusChartData.map((entry) => (
+                           // Use fill attribute directly on Bar, recharts handles mapping
+                           // The fill prop inside Bar component or using Cell is better
+                           <React.Fragment key={entry.status} /> // Placeholder, actual fill applied below
+                         ))}
+                          <LabelList
                             position="top"
                             offset={8}
                             className="fill-foreground text-xs"
                             formatter={(value: number) => value.toLocaleString()}
                          />
+                         {/* Apply fill using Cell for more control if needed, or directly on Bar */}
+                          {statusChartData.map((entry) => (
+                            // @ts-ignore - Recharts types might need Cell for individual colors
+                             <Bar key={`bar-${entry.status}`} dataKey="count" name={entry.status} fill={`var(--color-${entry.fillKey})`} />
+                           ))}
+                       </Bar>
+
+                       {/* Alternative using Cell:
+                       <Bar dataKey="count" radius={4}>
+                         <LabelList position="top" offset={8} className="fill-foreground text-xs" formatter={(value: number) => value.toLocaleString()} />
                          {statusChartData.map((entry) => (
-                           <Bar
-                             key={entry.status} // Use unique key
-                              dataKey="count" // Ensure this matches the data structure
-                              fill={`var(--color-${entry.fillKey})`} // Use mapped fillKey
-                              radius={4}
-                           />
+                           <Cell key={`cell-${entry.status}`} fill={`var(--color-${entry.fillKey})`} />
                          ))}
                        </Bar>
+                       */}
                      </BarChart>
                    </ResponsiveContainer>
                  </ChartContainer>
-              ) : (
-                 <div className="h-64 flex items-center justify-center text-muted-foreground bg-muted/50 rounded-md">
+               ) : (
+                 <div className="h-72 flex items-center justify-center text-muted-foreground bg-muted/50 rounded-md">
                    No hay datos de vehículos para mostrar el gráfico.
                  </div>
-              )}
-            </CardContent>
-          </Card>
+               )}
+             </CardContent>
+           </Card>
+
 
           {/* Placeholder for more detailed charts/tables */}
           {/* <Card className="mt-6">

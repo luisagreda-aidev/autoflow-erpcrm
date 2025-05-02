@@ -1,7 +1,8 @@
 // @/lib/reports.ts
-'use server';
+'use server'; // This module exports a Server Action
 
-import { db } from './db'; // Import the database connection
+import { _getAllVehiclesInternal } from './db'; // Import internal DB function
+// Import other internal functions as needed (e.g., for leads)
 
 // Define the structure for the report data
 export interface VehicleReportData {
@@ -13,44 +14,42 @@ export interface VehicleReportData {
 }
 
 /**
- * Fetches and aggregates data required for the reports page.
+ * Server Action to fetch and aggregate data required for the reports page.
  * @returns An object containing various report metrics.
  */
 export async function getVehicleReportData(): Promise<VehicleReportData> {
   try {
-    // Get total vehicle count
-    const totalStmt = db.prepare('SELECT COUNT(*) as count FROM vehicles');
-    const totalResult = totalStmt.get() as { count: number };
-    const totalVehicles = totalResult?.count ?? 0;
+    // Get all vehicles using the internal function
+    const vehicles = _getAllVehiclesInternal();
 
-    // Get count by status
-    const statusStmt = db.prepare(`
-      SELECT status, COUNT(*) as count
-      FROM vehicles
-      GROUP BY status
-    `);
-    const statusResults = statusStmt.all() as { status: string; count: number }[];
+    const totalVehicles = vehicles.length;
+
+    // Calculate count by status
     const vehiclesByStatus: Record<string, number> = {};
-    statusResults.forEach(row => {
-        // Normalize status names if necessary, e.g., lowercase
-      vehiclesByStatus[row.status] = row.count;
+    vehicles.forEach(vehicle => {
+      vehiclesByStatus[vehicle.status] = (vehiclesByStatus[vehicle.status] || 0) + 1;
     });
 
-    // Get average price and mileage for 'Disponible' vehicles
-    const avgStmt = db.prepare(`
-      SELECT AVG(price) as avgPrice, AVG(mileage) as avgMileage
-      FROM vehicles
-      WHERE status = 'Disponible' OR status = 'Reservado' OR status = 'En preparación'
-    `); // Adjust status filter as needed
-    const avgResult = avgStmt.get() as { avgPrice: number | null; avgMileage: number | null };
-    const averagePrice = avgResult?.avgPrice ?? null;
-    const averageMileage = avgResult?.avgMileage ?? null;
+    // Calculate average price and mileage for relevant vehicles
+    const relevantVehicles = vehicles.filter(v =>
+        v.status === 'Disponible' || v.status === 'Reservado' || v.status === 'En preparación'
+    );
+
+    let sumPrice = 0;
+    let sumMileage = 0;
+    let countRelevant = relevantVehicles.length;
+
+    relevantVehicles.forEach(v => {
+        sumPrice += v.price;
+        sumMileage += v.mileage;
+    });
+
+    const averagePrice = countRelevant > 0 ? sumPrice / countRelevant : null;
+    const averageMileage = countRelevant > 0 ? sumMileage / countRelevant : null;
 
 
     // --- Add more calculations here as needed ---
-    // Example: Inventory Age (more complex, might involve date calculations)
-    // Example: Sales velocity (requires sales data)
-    // Example: Lead conversion rate (requires lead data)
+
 
     return {
       totalVehicles,
@@ -62,6 +61,8 @@ export async function getVehicleReportData(): Promise<VehicleReportData> {
 
   } catch (error) {
     console.error("Error generating vehicle report data:", error);
+    // Consider logging the error or handling it differently
+    // Re-throwing the original error might expose sensitive details.
     throw new Error("No se pudieron generar los datos para los reportes de vehículos.");
   }
 }

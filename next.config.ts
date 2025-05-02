@@ -18,6 +18,10 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+   // Add this experimental flag to bundle 'better-sqlite3' for server components/actions
+   experimental: {
+     serverComponentsExternalPackages: ['better-sqlite3'],
+   },
 };
 
 export default nextConfig;

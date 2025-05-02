@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import { useState, useRef, useEffect, useTransition } from "react"; // Import useEffect, useTransition
+import { useState, useRef, useEffect, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { z } from "zod";
@@ -15,7 +15,7 @@ import {
   CardContent,
   CardFooter,
 } from "@/components/ui/card";
-import { PlusCircle, Search, Filter, X, Check, ChevronDown, Calendar as CalendarIcon, Car, Upload, Trash2, Loader2 } from "lucide-react"; // Import Car, Upload, Trash2, Loader2 icons
+import { PlusCircle, Search, Filter, X, ChevronDown, Calendar as CalendarIcon, Car, Upload, Trash2, Loader2 } from "lucide-react";
 import Image from "next/image";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -63,7 +63,8 @@ import { vehicleSchema, type VehicleInput } from "@/lib/schemas/vehicle";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { addVehicle, getAllVehicles, type Vehicle as DbVehicle } from "@/lib/db"; // Import DB functions
+// Import Server Actions instead of direct DB functions
+import { addVehicle, getAllVehicles, type Vehicle as DbVehicle } from "@/lib/actions/vehicleActions";
 
 // Define Vehicle interface for frontend use, extending DbVehicle slightly
 interface DisplayVehicle extends Omit<DbVehicle, 'features' | 'images'> {
@@ -99,12 +100,12 @@ export default function InventoryPage() {
   const [isPending, startTransition] = useTransition(); // For server action loading state
   const [isLoading, setIsLoading] = useState(true); // Loading state for initial data fetch
 
-  // Fetch initial vehicles on component mount
+  // Fetch initial vehicles on component mount using Server Action
   useEffect(() => {
     const fetchVehicles = async () => {
       setIsLoading(true);
       try {
-        const dbVehicles = await getAllVehicles();
+        const dbVehicles = await getAllVehicles(); // Use Server Action
         const displayVehicles = dbVehicles.map(v => ({
           ...v,
           features: v.features ? JSON.parse(v.features) : [],
@@ -112,6 +113,7 @@ export default function InventoryPage() {
         }));
         setVehicles(displayVehicles);
       } catch (error: any) {
+        console.error("Error fetching vehicles:", error); // Log the actual error
         toast({
           title: "Error al cargar vehículos",
           description: error.message || "No se pudieron obtener los datos del inventario.",
@@ -122,7 +124,7 @@ export default function InventoryPage() {
       }
     };
     fetchVehicles();
-  }, [toast]); // Added toast to dependencies
+  }, [toast]);
 
 
   // Initialize react-hook-form
@@ -178,26 +180,23 @@ export default function InventoryPage() {
   const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (files) {
-        const currentPreviews = form.getValues('images') || []; // Get current File array
+        const currentFiles = form.getValues('images') || []; // Get current File array from form state
         const newFiles = Array.from(files);
 
-        // Create new preview objects
+        // Create new preview objects for newly selected files
         const newPreviews = newFiles.map(file => ({
             file,
             preview: URL.createObjectURL(file)
         }));
 
-        // Combine existing files and new files, update form state, and previews
-        const updatedFiles = [...currentPreviews, ...newFiles];
+        // Combine existing files (from form state) and new files
+        const updatedFiles = [...currentFiles, ...newFiles];
+
+        // Combine existing previews (from local state) and new previews
         const updatedImagePreviewState = [...imagePreviews, ...newPreviews];
 
         setImagePreviews(updatedImagePreviewState); // Update local preview state
-        form.setValue('images', updatedFiles, { shouldValidate: true }); // Update form with File objects
-
-        // Important: It's generally better *not* to revoke URLs immediately after creating them
-        // if they are still being used in the UI (like in previews).
-        // The useEffect cleanup hook will handle revocation when the component unmounts
-        // or when the `imagePreviews` state changes (e.g., when removing an image).
+        form.setValue('images', updatedFiles, { shouldValidate: true }); // Update form with the combined File objects
     }
 };
 
@@ -230,24 +229,23 @@ export default function InventoryPage() {
   const onSubmit = (data: VehicleInput) => {
     startTransition(async () => {
       try {
-        // --- Image Upload Logic Placeholder ---
-        // In a real app, upload files in `data.images` to cloud storage (e.g., Firebase Storage, S3)
-        // and get back an array of URLs.
-        // For now, we'll simulate this by using the data URIs from previews or just placeholders.
-        // THIS IS NOT PRODUCTION READY for image handling.
-        const uploadedImageUrls = await Promise.all(
+        // --- Convert File objects to Data URIs for submission ---
+        // This happens on the client before calling the server action
+         const uploadedImageUrls = await Promise.all(
              (data.images || []).map(async (file) => {
-                 // Simulate upload / Convert file to data URI for temporary storage
                  return new Promise<string>((resolve, reject) => {
                      const reader = new FileReader();
                      reader.onload = () => resolve(reader.result as string);
                      reader.onerror = (error) => reject(error);
-                     reader.readAsDataURL(file);
+                     reader.readAsDataURL(file); // Read file as Data URI
                  });
              })
          );
 
-        const vehicleDataForDb: Omit<DbVehicle, 'id' | 'createdAt' | 'updatedAt'> = {
+
+        // Prepare data for the database (matching the expected type in the Server Action)
+        // Note: The Server Action expects stringified JSON for features and images.
+        const vehicleDataForAction: Omit<DbVehicle, 'id' | 'createdAt' | 'updatedAt'> = {
           make: data.make,
           model: data.model,
           year: Number(data.year),
@@ -258,49 +256,52 @@ export default function InventoryPage() {
           color: data.color || null,
           engine: data.engine || null,
           transmission: data.transmission,
-          features: JSON.stringify(data.features || []), // Store features as JSON string
+          features: JSON.stringify(data.features || []), // Stringify features
           condition: data.condition || null,
           documentation: data.documentation || null,
-          entryDate: data.entryDate.toISOString(), // Store date as ISO string
-          cost: data.cost ? Number(data.cost) : null, // Handle optional cost
-          imageUrl: data.imageUrl || (uploadedImageUrls.length > 0 ? uploadedImageUrls[0] : null), // Use first uploaded image URL or provided URL
-          images: JSON.stringify(uploadedImageUrls), // Store image URLs/Data URIs as JSON string
+          entryDate: data.entryDate.toISOString(),
+          cost: data.cost ? Number(data.cost) : null,
+          imageUrl: data.imageUrl || (uploadedImageUrls.length > 0 ? uploadedImageUrls[0] : null),
+          images: JSON.stringify(uploadedImageUrls), // Stringify image data URIs
         };
 
-        const newVehicleId = await addVehicle(vehicleDataForDb);
 
-        // OPTION 1: Optimistic Update (faster UI feedback)
-        // Create the display vehicle optimistically based on submitted data
+        // Call the Server Action
+        const newVehicleId = await addVehicle(vehicleDataForAction);
+
+
+        // Optimistic Update (using data prepared for the action)
          const newDisplayVehicle: DisplayVehicle = {
           id: newVehicleId, // Use the returned ID
-          ...vehicleDataForDb,
-           entryDate: data.entryDate.toISOString(), // Ensure date is string
-           cost: vehicleDataForDb.cost, // Ensure cost is number or null
-           price: vehicleDataForDb.price,
-           mileage: vehicleDataForDb.mileage,
-           year: vehicleDataForDb.year,
-           features: data.features || [], // Use parsed array for display
-           images: uploadedImageUrls, // Use parsed array for display
-           // Add createdAt/updatedAt placeholder if needed, or fetch the full record
-           createdAt: new Date().toISOString(),
-           updatedAt: new Date().toISOString(),
+          make: vehicleDataForAction.make,
+          model: vehicleDataForAction.model,
+          year: vehicleDataForAction.year,
+          vin: vehicleDataForAction.vin,
+          price: vehicleDataForAction.price,
+          mileage: vehicleDataForAction.mileage,
+          status: vehicleDataForAction.status,
+          color: vehicleDataForAction.color,
+          engine: vehicleDataForAction.engine,
+          transmission: vehicleDataForAction.transmission,
+          condition: vehicleDataForAction.condition,
+          documentation: vehicleDataForAction.documentation,
+          entryDate: vehicleDataForAction.entryDate, // Already ISO string
+          cost: vehicleDataForAction.cost, // Already number or null
+          imageUrl: vehicleDataForAction.imageUrl,
+          // --- For display, parse the JSON strings back ---
+          features: data.features || [], // Use original features array for display
+          images: uploadedImageUrls, // Use the data URIs for display
+          // Add createdAt/updatedAt placeholder if needed
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
         };
         setVehicles((prev) => [newDisplayVehicle, ...prev]);
 
 
-        // OPTION 2: Refetch (simpler, slightly slower UI)
-        // const updatedVehicles = await getAllVehicles();
-        // const displayVehicles = updatedVehicles.map(v => ({
-        //   ...v,
-        //   features: v.features ? JSON.parse(v.features) : [],
-        //   images: v.images ? JSON.parse(v.images) : [],
-        // }));
-        // setVehicles(displayVehicles);
-
         toast({
           title: "Vehículo Añadido",
           description: `${data.make} ${data.model} ha sido añadido al inventario.`,
-          variant: "default", // Changed from success to default for consistency
+          variant: "default",
         });
         setIsAddVehicleOpen(false);
         form.reset();
@@ -361,7 +362,28 @@ export default function InventoryPage() {
               <FormItem>
                 <FormLabel>Año *</FormLabel>
                 <FormControl>
-                    <Input type="number" placeholder="Ej. 2023" {...field} onChange={e => field.onChange(parseInt(e.target.value, 10) || new Date().getFullYear())} />
+                    {/* Ensure field.value is treated as number for input */}
+                    <Input
+                        type="number"
+                        placeholder="Ej. 2023"
+                        {...field}
+                        value={field.value ?? ''} // Handle potential undefined/null value
+                        onChange={e => {
+                            const val = e.target.value;
+                            // Parse to number or keep as empty string if input is cleared
+                            field.onChange(val === '' ? '' : parseInt(val, 10) || new Date().getFullYear());
+                        }}
+                         onBlur={e => {
+                             // Ensure a valid number or reset on blur if needed
+                             const numValue = parseInt(e.target.value, 10);
+                             if (isNaN(numValue) || numValue < 1900 || numValue > new Date().getFullYear() + 1) {
+                                // Optionally reset to default or keep invalid state for validation message
+                                // field.onChange(new Date().getFullYear()); // Example: Reset to current year
+                             } else {
+                                field.onChange(numValue);
+                             }
+                         }}
+                    />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -403,8 +425,27 @@ export default function InventoryPage() {
                 render={({ field }) => (
                     <FormItem>
                         <FormLabel>Kilometraje (km) *</FormLabel>
-                        <FormControl>
-                        <Input type="number" placeholder="Ej. 50000" {...field} onChange={e => field.onChange(parseInt(e.target.value, 10) >= 0 ? parseInt(e.target.value, 10) : 0)}/>
+                         <FormControl>
+                            <Input
+                                type="number"
+                                placeholder="Ej. 50000"
+                                {...field}
+                                value={field.value ?? ''} // Handle potential undefined/null
+                                onChange={e => {
+                                    const val = e.target.value;
+                                    const num = parseInt(val, 10);
+                                    // Allow empty string, otherwise parse and validate
+                                    field.onChange(val === '' ? '' : (num >= 0 ? num : 0));
+                                }}
+                                onBlur={e => {
+                                     const numValue = parseInt(e.target.value, 10);
+                                     if (isNaN(numValue) || numValue < 0) {
+                                         field.onChange(0); // Reset to 0 if invalid or negative on blur
+                                     } else {
+                                        field.onChange(numValue);
+                                     }
+                                 }}
+                            />
                         </FormControl>
                         <FormMessage />
                     </FormItem>
@@ -458,8 +499,29 @@ export default function InventoryPage() {
                 render={({ field }) => (
                 <FormItem>
                     <FormLabel>Precio de Venta (€) *</FormLabel>
-                    <FormControl>
-                        <Input type="number" step="0.01" placeholder="Ej. 15000" {...field} onChange={e => field.onChange(parseFloat(e.target.value) > 0 ? parseFloat(e.target.value) : 0)} />
+                     <FormControl>
+                        <Input
+                            type="number"
+                            step="0.01"
+                            placeholder="Ej. 15000"
+                            {...field}
+                             value={field.value ?? ''} // Handle potential undefined/null
+                            onChange={e => {
+                                const val = e.target.value;
+                                const num = parseFloat(val);
+                                // Allow empty string, otherwise parse and validate
+                                field.onChange(val === '' ? '' : (num > 0 ? num : 0));
+                            }}
+                             onBlur={e => {
+                                 const numValue = parseFloat(e.target.value);
+                                 if (isNaN(numValue) || numValue <= 0) {
+                                     // Optionally reset or keep invalid state
+                                     // field.onChange(0); // Example: Reset to 0
+                                 } else {
+                                     field.onChange(numValue);
+                                 }
+                             }}
+                        />
                     </FormControl>
                     <FormMessage />
                 </FormItem>
@@ -472,7 +534,28 @@ export default function InventoryPage() {
                 <FormItem>
                     <FormLabel>Coste Adquisición (€)</FormLabel>
                     <FormControl>
-                        <Input type="number" step="0.01" placeholder="Ej. 12000" {...field} onChange={e => field.onChange(parseFloat(e.target.value) >= 0 ? parseFloat(e.target.value) : undefined)} value={field.value ?? ''} />
+                        <Input
+                            type="number"
+                            step="0.01"
+                            placeholder="Ej. 12000"
+                            {...field}
+                            value={field.value ?? ''} // Handle null/undefined from defaultValues or reset
+                            onChange={e => {
+                                const val = e.target.value;
+                                // Allow empty string (will be treated as null/undefined by zod optional)
+                                // Parse if not empty
+                                field.onChange(val === '' ? undefined : parseFloat(val) >= 0 ? parseFloat(val) : undefined);
+                            }}
+                             onBlur={e => {
+                                 const numValue = parseFloat(e.target.value);
+                                 // If it's NaN or negative after typing, clear it on blur
+                                 if (isNaN(numValue) || numValue < 0) {
+                                      field.onChange(undefined);
+                                 } else {
+                                     field.onChange(numValue); // Keep valid number
+                                 }
+                             }}
+                        />
                     </FormControl>
                     <FormMessage />
                 </FormItem>
@@ -563,7 +646,8 @@ export default function InventoryPage() {
                         <ChevronDown className="h-4 w-4 opacity-50" />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent className="w-[--radix-dropdown-menu-trigger-width] max-h-60 overflow-y-auto">
+                    {/* Ensure DropdownMenuContent has sufficient z-index if needed */}
+                    <DropdownMenuContent className="w-[--radix-dropdown-menu-trigger-width] max-h-60 overflow-y-auto z-50"> {/* Increased z-index */}
                       <DropdownMenuLabel>Selecciona las características</DropdownMenuLabel>
                       <DropdownMenuSeparator />
                       {allFeatures.map((feature) => (
@@ -650,7 +734,7 @@ export default function InventoryPage() {
             <FormField
                   control={form.control}
                   name="images"
-                  render={() => ( // No need for field props directly here if using state for previews
+                  render={({ fieldState }) => ( // Use fieldState to get errors
                   <FormItem>
                       <FormLabel>Imágenes del Vehículo</FormLabel>
                       <FormControl>
@@ -698,7 +782,8 @@ export default function InventoryPage() {
                             <Upload className="mr-2 h-4 w-4" /> Subir Imágenes
                         </Button>
                       <FormDescription>Sube una o varias imágenes del vehículo (máx. 5MB por imagen).</FormDescription>
-                      <FormMessage /> {/* Displays validation errors for images */}
+                       {/* Manually display form-level errors for 'images' if needed, or rely on FormMessage below */}
+                      <FormMessage /> {/* Displays validation errors for the images field */}
                   </FormItem>
                   )}
               />
@@ -832,8 +917,12 @@ export default function InventoryPage() {
                     data-ai-hint={`${vehicle.make} ${vehicle.model} car dealership`}
                     sizes="(max-width: 768px) 50vw, (max-width: 1200px) 33vw, 25vw" // Responsive sizes
                     onError={(e) => {
-                        (e.target as HTMLImageElement).src = 'https://picsum.photos/400/267?grayscale&blur=1';
-                        (e.target as HTMLImageElement).alt = 'Placeholder Image';
+                        const target = e.target as HTMLImageElement;
+                        // Check if the error source is already the placeholder to prevent infinite loops
+                        if (target.src !== 'https://picsum.photos/400/267?grayscale&blur=1') {
+                             target.src = 'https://picsum.photos/400/267?grayscale&blur=1';
+                             target.alt = 'Placeholder Image';
+                         }
                     }}
                     priority={false} // Consider setting priority based on position
                 />
@@ -874,7 +963,7 @@ export default function InventoryPage() {
         // Empty State Card
         <Card className="col-span-full flex flex-col items-center justify-center py-16 border-dashed border-2 mt-8">
             <CardHeader className="text-center">
-                <Car className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+                <Car className="mx-auto h-12 w-12 text-muted-foreground mb-4" /> {/* Use Car icon */}
                 <CardTitle className="text-xl">No hay vehículos en el inventario</CardTitle>
                 <CardDescription>Empieza añadiendo tu primer vehículo.</CardDescription>
             </CardHeader>
@@ -940,14 +1029,17 @@ export default function InventoryPage() {
                                     {selectedVehicle.images.map((imageUrl, index) => (
                                         <div key={index} className="relative aspect-[3/2] w-full rounded-md overflow-hidden">
                                             <Image
-                                                src={imageUrl} // Use the stored URL
+                                                src={imageUrl} // Use the stored URL (Data URI or actual URL)
                                                 alt={`${selectedVehicle.make} ${selectedVehicle.model} - Foto ${index + 1}`}
                                                 fill
                                                 className="object-cover"
                                                  sizes="(max-width: 640px) 90vw, (max-width: 1024px) 45vw, 30vw"
                                                 onError={(e) => {
-                                                    (e.target as HTMLImageElement).src = 'https://picsum.photos/300/200?grayscale&blur=1';
-                                                    (e.target as HTMLImageElement).alt = 'Placeholder Image';
+                                                     const target = e.target as HTMLImageElement;
+                                                     if (target.src !== 'https://picsum.photos/300/200?grayscale&blur=1') {
+                                                         target.src = 'https://picsum.photos/300/200?grayscale&blur=1';
+                                                         target.alt = 'Placeholder Image';
+                                                     }
                                                 }}
                                             />
                                         </div>
@@ -965,8 +1057,11 @@ export default function InventoryPage() {
                                         data-ai-hint={`${selectedVehicle.make} ${selectedVehicle.model} detail view`}
                                         sizes="(max-width: 640px) 90vw, (max-width: 1024px) 60vw, 500px"
                                         onError={(e) => {
-                                            (e.target as HTMLImageElement).src = 'https://picsum.photos/600/400?grayscale&blur=1';
-                                            (e.target as HTMLImageElement).alt = 'Placeholder Image';
+                                            const target = e.target as HTMLImageElement;
+                                            if (target.src !== 'https://picsum.photos/600/400?grayscale&blur=1') {
+                                                target.src = 'https://picsum.photos/600/400?grayscale&blur=1';
+                                                target.alt = 'Placeholder Image';
+                                            }
                                         }}
                                     />
                                 </div>
@@ -1022,22 +1117,3 @@ export default function InventoryPage() {
     </div>
   );
 }
-
-// Helper function to ensure number parsing handles empty strings or invalid input gracefully
-// Not strictly needed anymore with controlled components and zod parsing, but can be kept if desired
-const parseNumber = (value: string | undefined | null): number | undefined => {
-  if (value === null || value === undefined || value.trim() === "") {
-    return undefined;
-  }
-  const num = parseFloat(value);
-  return isNaN(num) ? undefined : num;
-};
-
-// Placeholder for actual image upload function
-// async function uploadFilesToStorage(files: File[]): Promise<string[]> {
-//     console.log("Simulating upload for files:", files.map(f => f.name));
-//     // Replace with actual upload logic (e.g., Firebase Storage, S3)
-//     // For demonstration, return mock URLs after a delay
-//     await new Promise(resolve => setTimeout(resolve, 1500));
-//     return files.map((file, index) => `https://mockstorage.com/uploads/${Date.now()}-${index}-${file.name}`);
-// }
