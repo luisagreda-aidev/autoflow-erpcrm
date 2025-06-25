@@ -1,5 +1,3 @@
-# Firebase Studio
+# Basis CRM AutoFlow in Development thanks
 
-This is a NextJS starter in Firebase Studio.
-
-To get started, take a look at src/app/page.tsx.
+Visit: https://11-11studios.tech
